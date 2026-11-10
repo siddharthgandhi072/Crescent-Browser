@@ -1,0 +1,70 @@
+/* Crescent: Arc-style polish on top of Zen's own look.
+ * Loaded from crescent.cfg as a "user" stylesheet, so every rule needs !important
+ * to beat Zen's built-in styles. Only the main browser window is touched. */
+
+@-moz-document url("chrome://browser/content/browser.xhtml") {
+
+  :root {
+    /* Arc's rounder corners */
+    --zen-border-radius: 10px !important;
+    --crescent-tab-radius: 10px;
+    --crescent-tab-selected: light-dark(rgba(255, 255, 255, 0.92), rgba(255, 255, 255, 0.14));
+    --crescent-tab-hover: light-dark(rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.07));
+    --crescent-tab-shadow:
+      0 1px 2px light-dark(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.35)),
+      0 2px 8px light-dark(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.15));
+  }
+
+  /* ---- Sidebar tabs: Arc's taller rows and white "pill" selection ---- */
+  #tabbrowser-tabs .tabbrowser-tab:not([zen-essential]) {
+    --tab-min-height: 36px !important;
+
+    & .tab-background {
+      border-radius: var(--crescent-tab-radius) !important;
+      transition: background-color 0.12s ease, box-shadow 0.12s ease !important;
+    }
+
+    &:hover:not([visuallyselected]) .tab-background {
+      background-color: var(--crescent-tab-hover) !important;
+    }
+
+    &[visuallyselected] .tab-background {
+      background-color: var(--crescent-tab-selected) !important;
+      box-shadow: var(--crescent-tab-shadow) !important;
+    }
+
+    & .tab-label {
+      font-size: 13px !important;
+    }
+
+    &[visuallyselected] .tab-label {
+      font-weight: 500 !important;
+    }
+  }
+
+  /* ---- Essentials = Arc's "Favorites" tiles ---- */
+  #zen-essentials .tabbrowser-tab[zen-essential] .tab-background {
+    border-radius: 12px !important;
+  }
+
+  /* ---- Address in the sidebar: a soft pill like Arc's ---- */
+  :root[zen-single-toolbar="true"] #navigator-toolbox #urlbar:not([breakout-extend]) > #urlbar-background {
+    border-radius: var(--crescent-tab-radius) !important;
+    background-color: light-dark(rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.06)) !important;
+    border: none !important;
+    box-shadow: none !important;
+  }
+
+  /* ---- Web page "card": rounded with a soft shadow ---- */
+  :root:not([inDOMFullscreen="true"]):not([zen-no-padding="true"])
+    #tabbrowser-tabpanels .browserSidebarContainer:not(.zen-glance-overlay) {
+    box-shadow:
+      0 0 0 0.5px light-dark(rgba(0, 0, 0, 0.06), rgba(255, 255, 255, 0.06)),
+      0 2px 12px light-dark(rgba(0, 0, 0, 0.10), rgba(0, 0, 0, 0.45)) !important;
+  }
+
+  /* ---- Thin, quiet sidebar scrollbar ---- */
+  #tabbrowser-arrowscrollbox {
+    scrollbar-width: thin !important;
+  }
+}

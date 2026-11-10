@@ -1,0 +1,64 @@
+name: Build Crescent (Arc-style Zen) for macOS
+
+on:
+  workflow_dispatch:
+    inputs:
+      zen_version:
+        description: "Zen release tag to build from (or 'latest')"
+        default: latest
+  push:
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the DMG
+        working-directory: .
+        env:
+          ZEN_VERSION: ${{ github.event.inputs.zen_version || 'latest' }}
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Self-test (launch the app once, check the mods loaded, take screenshots)
+        working-directory: .
+        run: |
+          APP="build/dmg/Crescent.app"
+          OUT="$PWD/selftest"; PROFILE="$RUNNER_TEMP/profile"
+          mkdir -p "$OUT" "$PROFILE"
+          echo 'user_pref("zen.welcome-screen.seen", true);' > "$PROFILE/user.js"
+          CRESCENT_SELFTEST="$OUT" "$APP/Contents/MacOS/zen" -profile "$PROFILE" -no-remote \
+            https://example.com https://www.wikipedia.org > "$OUT/stdout.log" 2>&1 &
+          PID=$!
+          for i in $(seq 1 60); do [ -f "$OUT/selftest.json" ] && break; sleep 2; done
+          sleep 3
+          screencapture -x "$OUT/screen.png" || true
+          kill $PID || true
+          cat "$OUT/selftest.json" || { echo "Self-test did not report"; tail -50 "$OUT/stdout.log"; exit 1; }
+          python3 - "$OUT/selftest.json" <<'PY'
+          import json, sys
+          r = json.load(open(sys.argv[1]))
+          assert r["cssRegistered"], "CSS not loaded"
+          assert r["archiveWindows"] >= 1, "auto-archive not attached"
+          assert "AIControls" in r["policies"]["active"], "AI policy not active"
+          assert r["prefs"]["browser.ml.enable"] is False
+          assert r["prefs"]["browser.ml.chat.enabled"] is False
+          assert r["prefs"]["browser.tabs.groups.smart.enabled"] is False
+          assert not r["errors"], r["errors"]
+          print("Self-test passed")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Crescent-dmg
+          path: dist/Crescent.dmg
+          compression-level: 0
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: selftest
+          path: selftest

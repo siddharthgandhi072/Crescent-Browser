@@ -1,0 +1,18 @@
+{
+  "policies": {
+    "AIControls": {
+      "Default": { "Value": "blocked", "Locked": true }
+    },
+    "GenerativeAI": {
+      "Enabled": false,
+      "Chatbot": false,
+      "LinkPreviews": false,
+      "TabGroups": false,
+      "SmartWindow": false,
+      "Locked": true
+    },
+    "DisableTelemetry": true,
+    "DisableFirefoxStudies": true,
+    "DisableAppUpdate": true
+  }
+}
