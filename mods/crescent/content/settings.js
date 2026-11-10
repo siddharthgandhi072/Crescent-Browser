@@ -214,7 +214,7 @@ $("version").textContent = `Crescent, based on Zen ${AppConstants.MOZ_APP_VERSIO
 // ---------- Go ----------
 bindPrefs();
 renderDefault();
-renderEngines().catch(console.error);
+renderEngines().catch(e => Crescent.logError("settings engines", e));
 renderShortcuts();
 renderProfiles();
 window.addEventListener("keydown", e => {

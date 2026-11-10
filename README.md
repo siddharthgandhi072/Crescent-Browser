@@ -1,14 +1,23 @@
 # Crescent: Zen Browser, made to feel like Arc (no AI)
 
-Crescent is the official **Zen Browser** for macOS with a small set of changes:
+Crescent is the official **Zen Browser** for macOS, turned into an Arc look-alike:
 
-* **All AI is off and locked.** That covers the AI chatbot sidebar, AI tab grouping and "clean up" suggestions, Smart Window, AI link-preview summaries, AI history search, AI image descriptions in PDFs, extensions running AI models, and on-device translation.
-* **Arc-like defaults.** The sidebar holds the address bar and has no top toolbar. Cmd+T opens a command bar. Favorites (Zen calls them "Essentials") are shared across all Spaces, Shift+click opens a Peek, the traffic-light buttons always show, and there's no bookmarks bar.
-* **Arc-style auto-archive.** Unpinned tabs you haven't looked at in 12 hours close by themselves. You can get them back from History > Recently Closed Tabs, or with Cmd+Shift+T.
-* **Arc-style polish.** Taller tab rows, a white "pill" behind the selected tab, rounder corners, and a soft shadow around the page.
-* **A new name and icon.** The app is called "Crescent" and uses an original pastel icon.
+* **No AI.** Every AI feature is off and locked. That covers the AI chatbot, AI tab grouping and "clean up", Smart Window, AI link previews, AI history search, AI PDF descriptions, extensions running AI models, and on-device translation.
+* **Little Crescent**, like Little Arc. Links you click in other apps (Mail, Slack, Messages…) open in a small window. Click **Open in Crescent** (or press ⌘↩) to move the page into your main window. Press ⌥⌘N for a new one.
+* **Archive.** Every tab you close is saved. Unpinned tabs you haven't used in 12 hours are archived automatically. The searchable **Archive** page has a sidebar button and a File menu item.
+* **Easels.** Free-form boards for text, sticky notes, shapes, drawing, images, links, and captures of any part of a web page. They're in the sidebar and the File menu.
+* **Spaces like Arc.** Each Space has a name, icon, color and **profile**, so logins stay separate. Spaces that share a profile share Favorites.
+* **Arc-style Settings** (⌘,). A simple window with General, Profiles, Links, Appearance, Shortcuts and Advanced tabs. "All settings…" opens the full settings.
+* **Arc look and keys.** The sidebar holds the address, there's a command bar on ⌘T, ⌘S hides the sidebar, and ⌃1–9 switches Spaces. There's a white pill behind the selected tab, rounded page cards, Peek on Shift+click, Boosts and split view.
+* **Crescent name and icon everywhere.** That includes the Dock, Finder and the menus ("About Crescent", "Quit Crescent").
 
-Zen already does most of what Arc did, so this project changes settings and adds a little code. It doesn't fork or recompile the browser.
+Crescent doesn't fork or recompile the browser. It changes settings and adds code through Firefox's official customization hooks.
+
+### What isn't like Arc
+
+* **Engine.** Crescent runs on Firefox's engine, not Chromium. Firefox extensions work; Chrome-only extensions don't.
+* **Passkeys.** Passkeys saved in iCloud don't work. Apple only allows that for browsers signed with a paid Apple Developer account and specially approved by Apple. Passwords, password managers and USB security keys all work.
+* **Updates.** Updates aren't automatic (see "Updating" below).
 
 ---
 
@@ -21,7 +30,15 @@ Zen already does most of what Arc did, so this project changes settings and adds
 │   ├── policies.json              → Contents/Resources/distribution/policies.json
 │   ├── defaults/pref/crescent-autoconfig.js → Contents/Resources/defaults/pref/
 │   ├── crescent.cfg                → Contents/Resources/crescent.cfg
-│   └── crescent/crescent.css        → Contents/Resources/crescent/crescent.css
+│   └── crescent/                  → Contents/Resources/crescent/
+│       ├── chrome.manifest        ← registers chrome://crescent/
+│       ├── browser.css            ← the Arc look for the browser window
+│       └── content/
+│           ├── Crescent.sys.mjs   ← Little Crescent, Archive, Settings, menus, sidebar buttons
+│           ├── CrescentStore.sys.mjs ← saves the Archive and Easels in your profile
+│           ├── archive.*          ← the Archive page
+│           ├── easels.* easel.*   ← the Easels list and editor
+│           └── settings.*         ← the Arc-style Settings window
 ├── icon/
 │   ├── make_icon.py               ← draws the icon (Python + Pillow)
 │   ├── AppIcon.png
@@ -61,7 +78,7 @@ This copy was assembled on Linux, where Apple's signing tool doesn't exist, so i
 
 ### Bring your Arc stuff over
 
-On first launch, Zen's welcome screen offers to import from other browsers, and **Arc is one of them**. It brings over your Spaces, pinned tabs and favorites. You can also run it later from **File → Import From Another Browser…**.
+On first launch, the welcome screen offers to import from other browsers, and **Arc is one of them**. It brings over your Spaces, pinned tabs and favorites. You can also run it later from **File → Import From Another Browser…**.
 
 ---
 
@@ -132,17 +149,24 @@ You can check that the policies are active by opening `about:policies` in the br
 * `crescent.cfg` is JavaScript with full browser privileges.
   * `lockPref(...)` forces a setting and greys it out. It's used for every AI and telemetry switch.
   * `defaultPref(...)` changes only the default, so you can still change those settings in Settings or `about:config`. It's used for the Arc-like defaults.
-  * It loads `crescent/crescent.css` into the browser window, so the styling lives inside the app instead of your profile.
-  * It runs the **auto-archive** timer: every 10 minutes it closes unpinned tabs that have been unused for 12 hours. It never closes pinned tabs, Favorites/Essentials, the current tab, tabs playing audio, tabs in a split view, or a tab open in Peek.
-  * Both numbers can be changed in `about:config`: `crescent.archive.after-hours` (set it to `0` to turn archiving off) and `crescent.archive.check-minutes`.
+  * It registers the `crescent/` folder as `chrome://crescent/`, loads `browser.css` into the browser window, and starts `Crescent.sys.mjs`.
 
-**c) The stylesheet: `crescent/crescent.css`.** This works the same way a `userChrome.css` does. You can edit it freely; each section is commented.
+**c) Crescent's own code: `crescent/content/`.** This is ordinary web code (HTML, CSS and JavaScript) running with browser privileges:
+
+* **`Crescent.sys.mjs`** sets up every window:
+  * **Archive:** it listens for closed tabs and saves each one. Every 10 minutes it closes unpinned tabs that have been unused for 12 hours. It never closes pinned tabs, Favorites, the current tab, tabs playing audio, split-view tabs, or a Peek.
+  * **Little Crescent:** Firefox opens a link from another app by calling `browserDOMWindow.openURI(...)` with an "external" flag. Crescent catches that call and opens a small window instead. **Open in Crescent** moves the tab into your main window with `gBrowser.adoptTab`.
+  * **Settings:** it replaces `openPreferences()`, which is what ⌘, calls, so the Crescent Settings window opens instead.
+  * **Menus and buttons:** it adds the File menu items and the Archive and Easels buttons at the bottom of the sidebar.
+* **`CrescentStore.sys.mjs`** saves the Archive (`crescent-archive.json`) and Easels (`crescent-easels/`) in your profile folder.
+* The **pages** (`archive`, `easels`, `easel`, `settings`) are plain HTML files.
+* **`browser.css`** is the Arc styling. It works like a `userChrome.css`, and each section is commented.
 
 ### 4. Rename and replace the icon
 
 * `AppIcon.icns` is copied over `Contents/Resources/firefox.icns`.
 * `/usr/libexec/PlistBuddy` edits `Contents/Info.plist` to set `CFBundleName`, `CFBundleDisplayName` and `CFBundleIdentifier`. This is the name you see in the Dock, Finder, Cmd-Tab and the menu bar.
-* Some menu items still say "About Zen" and "Quit Zen". Those words live inside Zen's compressed resource archive (`omni.ja`), and rewriting that archive is a common way to break the browser. It's left alone on purpose.
+* For the menus, the script unzips `Contents/Resources/browser/omni.ja` (Zen's packed interface files) and changes the brand name in `localization/*/branding/brand.ftl` and `chrome/*/locale/branding/brand.properties` to "Crescent". It also changes "Zen" in Zen's own text (except the Donate button, which still pays Zen), then zips the files back up. This is Mozilla's documented way to edit `omni.ja`, and the build's self-test checks that the menu says "Quit Crescent".
 
 ### 5. Re-sign
 
@@ -173,19 +197,22 @@ The `staging` folder holds `Crescent.app` and a shortcut to `/Applications`.
 | Hide/show sidebar | Compact mode | **Cmd+S** |
 | Command bar | URL bar replaces the new-tab page | **Cmd+T** / **Cmd+L** |
 | Spaces | Workspaces (Spaces) | **Ctrl+1…9**, swipe with two fingers |
-| Favorites (top grid) | Essentials (shared across Spaces) | drag a tab to the top |
+| Favorites (top grid) | Favorites, one set per profile | drag a tab to the top |
+| Profiles | Settings → Profiles (separate logins per Space) | |
 | Pinned tabs / folders | Pinned tabs + folders | **Cmd+Shift+D** pin/unpin |
 | Today tabs + "Clear" | Unpinned tabs + Clear button | **Cmd+Shift+K** clear |
-| Archive | Auto-archive + Recently Closed | **Cmd+Shift+T** reopen |
+| Archive | Archive page (sidebar button / File → Archive) | **Cmd+Shift+T** reopen last |
 | Peek | Glance | **Shift+click** a link |
 | Split View | Split View | **Cmd+Alt+V** / **Cmd+Alt+H** / **Cmd+Alt+G** |
 | Copy URL | Copy URL | **Cmd+Shift+C** |
 | Boosts | Boosts | in the site menu next to the URL |
 | Space colors / gradients | Right-click a Space → Edit theme | |
 | Media controls in sidebar | Media controls in sidebar | |
-| Little Arc | No direct equivalent; use a Glance or a new window | **Cmd+N** |
+| Little Arc | Little Crescent | **Cmd+Opt+N**, **Cmd+Enter** to open in Crescent |
+| Easels | Easels (sidebar button / File → New Easel) | |
+| Settings | Crescent Settings | **Cmd+,** |
 
-To change any shortcut, open `about:keyboard`.
+To change any shortcut, open Settings → Shortcuts → Customize, or go to `about:keyboard`.
 
 ## Updating to a newer Zen
 

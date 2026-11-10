@@ -259,7 +259,7 @@ export const Crescent = {
       return;
     }
     const original = bdw.openURI;
-    bdw.openURI = (uri, ...rest) => {
+    const openURI = (uri, ...rest) => {
       try {
         const flags = rest[2] || 0;
         if (
@@ -277,6 +277,23 @@ export const Crescent = {
       }
       return original.call(bdw, uri, ...rest);
     };
+    // openURI is read-only on Firefox's object, so define our own copy on it.
+    try {
+      Object.defineProperty(bdw, "openURI", { value: openURI, writable: true, configurable: true });
+      this.report.linkHook = "defineProperty";
+    } catch (e) {
+      // Fallback: put a forwarding object in its place.
+      win.browserDOMWindow = new Proxy(bdw, {
+        get: (target, prop) => {
+          if (prop === "openURI") return openURI;
+          if (prop === "__crescentWrapped") return true;
+          const v = Reflect.get(target, prop);
+          return typeof v === "function" ? v.bind(target) : v;
+        },
+      });
+      this.report.linkHook = "proxy";
+      return;
+    }
     bdw.__crescentWrapped = true;
   },
 
