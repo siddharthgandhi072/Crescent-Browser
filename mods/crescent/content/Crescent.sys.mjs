@@ -299,6 +299,7 @@ export const Crescent = {
       this._str(url)
     );
     w.__crescentLittle = true;
+    w.__crescentLittleFocus = url === "about:blank"; // empty window: start in the address box
     w._zenStartupSyncFlag = "unsynced"; // Zen: don't mirror this window's tabs elsewhere
     return w;
   },
@@ -376,7 +377,7 @@ export const Crescent = {
       },
       true
     );
-    if (win.gBrowser.currentURI.spec === "about:blank") {
+    if (win.__crescentLittleFocus) {
       win.setTimeout(() => field.focus(), 50);
     }
   },
