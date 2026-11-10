@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Archive</title>
+  <link rel="icon" href="chrome://crescent/content/icons/archive.svg">
+  <link rel="stylesheet" href="chrome://crescent/content/pages.css">
+  <link rel="stylesheet" href="chrome://crescent/content/archive.css">
+</head>
+<body>
+  <div class="page">
+    <div class="row head">
+      <h1>Archive</h1>
+      <span class="spacer"></span>
+      <button id="clear" class="ghost danger">Clear Archive</button>
+    </div>
+    <p class="muted sub" id="summary"></p>
+    <input id="search" type="search" placeholder="Search archived tabs" autofocus>
+    <div id="list"></div>
+  </div>
+  <script src="chrome://crescent/content/archive.js"></script>
+</body>
+</html>

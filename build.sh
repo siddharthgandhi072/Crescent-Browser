@@ -47,12 +47,35 @@ R="$C/Resources"
 echo "Zen version: $($PLIST -c 'Print :CFBundleShortVersionString' "$C/Info.plist")"
 
 # ---------------------------------------------------------------------------
-step "3/6  Adding the Arc mods (no-AI policy, Arc defaults, CSS, auto-archive)"
+step "3/6  Adding Crescent (no-AI policy, Arc defaults, look, Archive, Little Crescent, Easels, Settings)"
 mkdir -p "$R/distribution" "$R/defaults/pref"
 cp "$HERE/mods/policies.json"                         "$R/distribution/policies.json"
 cp "$HERE/mods/defaults/pref/crescent-autoconfig.js"   "$R/defaults/pref/crescent-autoconfig.js"
 cp "$HERE/mods/crescent.cfg"                           "$R/crescent.cfg"
 rm -rf "$R/crescent" && cp -R "$HERE/mods/crescent"     "$R/crescent"
+
+# ---------------------------------------------------------------------------
+step "3b   Changing the name in menus (\"Quit $APP_NAME\", \"About $APP_NAME\")"
+# The menu text comes from Zen's localization files inside browser/omni.ja
+# (a zip). Unpack it, swap the brand name, and zip it back up.
+OMNI="$R/browser/omni.ja"
+OX="$WORK/omni"
+rm -rf "$OX" && mkdir -p "$OX"
+( cd "$OX" && unzip -q "$OMNI" ) || [[ $? -le 2 ]]   # 1-2 = harmless warnings about Mozilla's jar layout
+[[ -f "$OX/localization/en-US/branding/brand.ftl" ]] || { echo "brand.ftl not found in omni.ja" >&2; exit 1; }
+export BRAND="$APP_NAME"
+find "$OX/localization" -path "*/branding/brand.ftl" -exec perl -pi -e \
+  's/^(-brand-(shorter|short|full|product)-name\s*=\s*).*/$1$ENV{BRAND}/' {} +
+find "$OX/chrome" -path "*/branding/brand.properties" -exec perl -pi -e \
+  's/^(brand(Shorter|Short|Full)Name\s*=\s*).*/$1$ENV{BRAND}/' {} +
+# Zen's own strings that spell out "Zen" (e.g. "Welcome to Zen")
+find "$OX/localization" -name "zen*.ftl" -exec perl -pi -e \
+  'next if /^\s*#/ || /Donate/; my ($k, $v) = /^([^=]*=)(.*)$/s ? ($1, $2) : ("", $_);
+   $v =~ s/\bZen Browser\b/$ENV{BRAND}/g; $v =~ s/\bZen\b/$ENV{BRAND}/g; $_ = $k . $v' {} +
+grep -h "brand-short-name" "$OX/localization/en-US/branding/brand.ftl"
+rm -f "$OMNI"
+( cd "$OX" && zip -qr9XD "$OMNI" . )
+rm -rf "$OX"
 
 # ---------------------------------------------------------------------------
 step "4/6  Renaming to \"$APP_NAME\" and swapping the icon"
