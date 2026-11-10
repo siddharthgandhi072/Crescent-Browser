@@ -43,10 +43,11 @@ $("make-default").addEventListener("click", () => {
   setTimeout(renderDefault, 1500);
 });
 
+const { SearchService } = ChromeUtils.importESModule("moz-src:///toolkit/components/search/SearchService.sys.mjs");
 async function renderEngines() {
-  await Services.search.init();
-  const engines = await Services.search.getVisibleEngines();
-  const current = await Services.search.getDefault();
+  await SearchService.init();
+  const engines = await SearchService.getVisibleEngines();
+  const current = await SearchService.getDefault();
   const sel = $("engine");
   sel.textContent = "";
   for (const e of engines) {
@@ -57,8 +58,8 @@ async function renderEngines() {
     sel.append(o);
   }
   sel.addEventListener("change", async () => {
-    const engine = Services.search.getEngineByName(sel.value);
-    if (engine) await Services.search.setDefault(engine, Ci.nsISearchService.CHANGE_REASON_USER);
+    const engine = SearchService.getEngineByName(sel.value);
+    if (engine) await SearchService.setDefault(engine, SearchService.CHANGE_REASON.USER);
   });
 }
 $("open-archive").addEventListener("click", () => Crescent.openPage("archive.html"));

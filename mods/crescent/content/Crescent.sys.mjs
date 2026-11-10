@@ -43,6 +43,11 @@ export const Crescent = {
     Services.obs.addObserver(this, "browser-window-before-show");
     Services.obs.addObserver(this, "browser-delayed-startup-finished");
     Services.obs.addObserver(this, "quit-application-granted");
+    try {
+      this.catchExternalLinks();
+    } catch (e) {
+      this.logError("links", e);
+    }
   },
 
   observe(subject, topic) {
@@ -87,7 +92,6 @@ export const Crescent = {
     const little = this.isLittle(win);
     const steps = [
       ["archive", () => this.watchClosedTabs(win)],
-      ["links", () => this.catchExternalLinks(win)],
       ["settings", () => this.replaceSettings(win)],
       ["keys", () => this.addKeys(win)],
       ["menus", () => this.addMenuItems(win)],
@@ -253,48 +257,36 @@ export const Crescent = {
   // -------------------------------------------------------------------------
   // Little Crescent
   // -------------------------------------------------------------------------
-  catchExternalLinks(win) {
-    const bdw = win.browserDOMWindow;
-    if (!bdw || bdw.__crescentWrapped) {
+  // Firefox opens links from other apps through BrowserDOMWindow.openURI with
+  // the OPEN_EXTERNAL flag. Patch that method once (on the class, since the
+  // per-window object is read-only) to open Little Crescent instead.
+  catchExternalLinks() {
+    const { BrowserDOMWindow } = ChromeUtils.importESModule("resource:///modules/BrowserDOMWindow.sys.mjs");
+    const proto = BrowserDOMWindow.prototype;
+    if (proto.__crescentWrapped) {
       return;
     }
-    const original = bdw.openURI;
-    const openURI = (uri, ...rest) => {
+    const original = proto.openURI;
+    const self = this;
+    proto.openURI = function (uri, openWindowInfo, where, flags, ...rest) {
       try {
-        const flags = rest[2] || 0;
         if (
           flags & Ci.nsIBrowserDOMWindow.OPEN_EXTERNAL &&
           uri &&
           /^https?$/.test(uri.scheme) &&
           Services.prefs.getBoolPref("crescent.little.enabled", true) &&
-          !lazy.PrivateBrowsingUtils.isWindowPrivate(win)
+          !(this.win && lazy.PrivateBrowsingUtils.isWindowPrivate(this.win))
         ) {
-          const little = this.openLittle(uri.spec);
-          return little ? null : original.call(bdw, uri, ...rest);
+          self.openLittle(uri.spec);
+          return null;
         }
       } catch (e) {
-        this.logError("little open", e);
+        self.logError("little open", e);
       }
-      return original.call(bdw, uri, ...rest);
+      return original.call(this, uri, openWindowInfo, where, flags, ...rest);
     };
-    // openURI is read-only on Firefox's object, so define our own copy on it.
-    try {
-      Object.defineProperty(bdw, "openURI", { value: openURI, writable: true, configurable: true });
-      this.report.linkHook = "defineProperty";
-    } catch (e) {
-      // Fallback: put a forwarding object in its place.
-      win.browserDOMWindow = new Proxy(bdw, {
-        get: (target, prop) => {
-          if (prop === "openURI") return openURI;
-          if (prop === "__crescentWrapped") return true;
-          const v = Reflect.get(target, prop);
-          return typeof v === "function" ? v.bind(target) : v;
-        },
-      });
-      this.report.linkHook = "proxy";
-      return;
-    }
-    bdw.__crescentWrapped = true;
+    proto.__crescentWrapped = true;
+    this.report.linkHook = "prototype";
   },
 
   openLittle(url = "about:blank") {
