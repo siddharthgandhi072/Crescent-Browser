@@ -23,10 +23,11 @@ html, body, #root { height: 100%; }
 .hotzone { position: absolute; left: 0; top: 0; bottom: 0; width: 10px; z-index: 3; }
 
 .topbar { display: flex; align-items: center; height: 26px; margin-bottom: 10px; flex: none; }
-.topbar .drag { flex: 1; height: 100%; -webkit-app-region: drag; }
+.topbar .drag { flex: 1 1 0; min-width: 0; height: 100%; -webkit-app-region: drag; }
 :root.mac .topbar { padding-left: 68px; }
 :root.mac .frame.winfs .topbar { padding-left: 0; }
-.tools { display: flex; gap: 1px; -webkit-app-region: no-drag; }
+.tools { display: flex; gap: 1px; min-width: 0; flex: 0 1 auto; -webkit-app-region: no-drag; }
+.tools .ib { flex: 0 1 27px; min-width: 22px; }
 
 .ib {
   width: 27px; height: 26px; display: grid; place-items: center; border-radius: 7px; color: var(--muted);
@@ -172,7 +173,8 @@ input.inline {
 /* bottom bar */
 .bottom { flex: none; display: flex; align-items: center; height: 30px; margin-top: 4px; -webkit-app-region: drag; }
 .bottom button { -webkit-app-region: no-drag; }
-.spaces { flex: 1; display: flex; justify-content: center; align-items: center; gap: 3px; min-width: 0; overflow: hidden; }
+.spaces { flex: 1; display: flex; justify-content: center; align-items: center; gap: 2px; min-width: 0; overflow: hidden; padding: 0 4px; }
+.spaces .sp { flex: 0 1 26px; min-width: 14px; }
 .sp { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--faint); transition: background .12s, color .12s; }
 .sp:hover { color: var(--ink); background: var(--hov); }
 .sp.on { color: var(--ink); background: var(--hov); }
@@ -294,12 +296,14 @@ body.resizing { cursor: col-resize; }
 .plus-menu button { width: 100%; height: 32px; border-radius: 8px; display: flex; align-items: center; gap: 10px; padding: 0 10px; font-size: 13px; font-weight: 500; text-align: left; }
 .plus-menu button:hover { background: var(--panel-hov); }
 .plus-menu svg { color: var(--panel-muted); }
+.pm-sep { height: 1px; background: var(--panel-line); margin: 4px 6px; }
+.note-page::-webkit-scrollbar { width: 0; }
 .sp { position: relative; }
 .sp.over { background: var(--hl); color: var(--ink); transform: scale(1.12); }
 .sp.priv { color: var(--muted); }
-.sp-label { position: absolute; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(4px); white-space: nowrap; font-size: 11.5px; font-weight: 600;
-  padding: 4px 8px; border-radius: 7px; background: rgba(30, 24, 36, .9); color: #f4eef8; opacity: 0; pointer-events: none; transition: opacity .12s .25s, transform .12s .25s; }
-.sp:hover .sp-label { opacity: 1; transform: translateX(-50%) translateY(0); }
+.sp-tip { position: absolute; left: 50%; bottom: 44px; transform: translateX(-50%); max-width: calc(100% - 24px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 11.5px; font-weight: 600; padding: 4px 9px; border-radius: 7px; background: rgba(30, 24, 36, .9); color: #f4eef8; pointer-events: none; z-index: 6; animation: tipin .12s .2s both; }
+@keyframes tipin { from { opacity: 0; transform: translateX(-50%) translateY(3px) } }
 
 /* notes */
 .note-page { position: absolute; border-radius: var(--page-radius, 9px); background: #fffdfa; color: #2a2620; overflow-y: auto; box-shadow: 0 0 0 .5px rgba(0,0,0,.12), 0 2px 8px rgba(0,0,0,.06); user-select: text; -webkit-user-select: text; }

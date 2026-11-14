@@ -122,7 +122,7 @@ function Sidebar({ state, space, runtime, toast, library, setLibrary, renaming, 
       ${s.mediaControls !== false && html`<${MiniPlayer} runtime=${runtime} display=${display} state=${state} />`}
       <${UpdatePill} />
       ${toast && html`<${Toast} toast=${toast} key=${toast.key} />`}
-      <${BottomBar} state=${state} space=${space} library=${library} setLibrary=${setLibrary} />
+      <${BottomBar} state=${state} space=${space} library=${library} setLibrary=${setLibrary} width=${s.sidebarWidth} />
       ${!s.sidebarHidden && html`<${ResizeHandle} width=${s.sidebarWidth} />`}
     </aside>`
 }
@@ -547,31 +547,35 @@ function UpdatePill() {
 
 // ---------------------------------------------------------------- bottom bar
 
-function BottomBar({ state, space, library, setLibrary }) {
+function BottomBar({ state, space, library, setLibrary, width }) {
   const [dl, setDl] = useState({ active: 0, progress: 0 })
   const [menu, setMenu] = useState(false)
+  const [tip, setTip] = useState(null)
   useEvent('downloads', setDl)
   const spaces = state.spaces
-  const many = spaces.length > 7
+  // Switch to small dots when the icons wouldn't fit the sidebar's width.
+  const many = spaces.length * 28 > (width || 262) - 18 - 64
   return html`
     ${menu && html`<${PlusMenu} close=${() => setMenu(false)} hasPrivate=${spaces.some(s => s.private)} />`}
+    ${tip && html`<div class="sp-tip" key=${tip}>${tip}</div>`}
     <div class="bottom">
       <button class=${cls('ib lib', (dl.active || library) && 'on')} title="Library" onClick=${() => setLibrary(library ? null : dl.active ? 'downloads' : 'archive')}>
         <${Icon} name=${dl.active ? 'down' : 'archive'} />
         ${dl.active > 0 && html`<svg class="ring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" pathLength="100" style=${`stroke-dasharray:${Math.max(4, Math.round((dl.progress < 0 ? 0.3 : dl.progress) * 100))} 100`} /></svg>`}
       </button>
       <div class="spaces">
-        ${spaces.map((sp, i) => html`<${SpaceButton} key=${sp.id} sp=${sp} i=${i} on=${sp.id === space.id} many=${many} />`)}
+        ${spaces.map((sp, i) => html`<${SpaceButton} key=${sp.id} sp=${sp} i=${i} on=${sp.id === space.id} many=${many} setTip=${setTip} />`)}
       </div>
       <button class=${cls('ib', menu && 'on')} title="New…" onClick=${() => setMenu(v => !v)}><${Icon} name="plus" /></button>
     </div>`
 }
 
-function SpaceButton({ sp, i, on, many }) {
+function SpaceButton({ sp, i, on, many, setTip }) {
   const [over, setOver] = useState(false)
   const hoverTimer = useRef(null)
   return html`
-    <button class=${cls('sp', on && 'on', many && 'dot', over && 'over', sp.private && 'priv')} title=${sp.name}
+    <button class=${cls('sp', on && 'on', many && 'dot', over && 'over', sp.private && 'priv')}
+      onMouseEnter=${() => setTip(sp.name)} onMouseLeave=${() => setTip(t => (t === sp.name ? null : t))}
       onClick=${() => invoke('space:switch', sp.id)}
       onContextMenu=${e => { e.preventDefault(); invoke('space:menu', sp.id) }}
       draggable=${!sp.private}
@@ -591,7 +595,6 @@ function SpaceButton({ sp, i, on, many }) {
         if (id) { e.preventDefault(); endDrag(); invoke('item:move', id, { zone: 'today', index: 0, spaceId: sp.id }) }
       }}>
       ${many ? html`<i></i>` : html`<${Icon} name=${sp.icon} size=${14} />`}
-      <span class="sp-label">${sp.name}</span>
     </button>`
 }
 
@@ -611,6 +614,8 @@ function PlusMenu({ close, hasPrivate }) {
       ${item('pen', 'New Note', 'note:new')}
       ${item('split', 'New Split View', 'split:toggle')}
       ${item('window', 'Little Crescent Window', 'little:new', {})}
+      <div class="pm-sep"></div>
+      ${item('down', 'Import from Arc or Another Browser…', 'settings:open', 'import')}
     </div>`
 }
 

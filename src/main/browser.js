@@ -812,7 +812,7 @@ class MainWindow {
   }
 
   setSidebarWidth(px) {
-    this.settings.sidebarWidth = Math.max(200, Math.min(420, Math.round(px)))
+    this.settings.sidebarWidth = Math.max(236, Math.min(440, Math.round(px)))
     this.layout()
     this.pushState(true)
   }

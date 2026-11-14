@@ -256,3 +256,34 @@ input.inline { flex: 1; height: 24px; border: 0; border-radius: 6px; padding: 0 
 .fstop { position: relative; overflow: hidden; height: 30px; padding: 0 11px; border-radius: 8px; background: rgba(255,255,255,.09); font-size: 12px; font-weight: 600; color: #f4eef8; }
 .fstop i { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(240, 120, 110, .45); }
 .fstop span { position: relative; }
+
+/* ---------------- small windows */
+.sheet { container-type: inline-size; }
+@container (max-width: 760px) {
+  .stg nav { width: 52px; padding: 14px 6px; }
+  .stg nav button { justify-content: center; padding: 0; font-size: 0; gap: 0; }
+  .stg nav button svg { width: 17px; height: 17px; }
+  .sm-title { display: none; }
+  .stg main { padding: 24px 20px 32px; }
+}
+@container (max-width: 640px) {
+  .stg .row { flex-wrap: wrap; }
+  .stg .rr { max-width: 100%; flex-wrap: wrap; }
+  .stg .rl { min-width: 60%; }
+  .stg .slide input { width: 120px; }
+  .stg .row.atc { flex-direction: column; align-items: stretch; }
+}
+.stg .seg { flex-wrap: wrap; }
+.stg main { overflow-x: hidden; }
+@media (max-width: 760px) {
+  .cmd .foot span:nth-child(3), .cmd .foot span:nth-child(4) { display: none; }
+}
+@media (max-width: 560px) { .cmd .foot { display: none; } }
+@media (max-height: 560px) {
+  .cmd { top: 10vh; }
+  .results { max-height: calc(100vh - 210px); }
+  .theme { top: 12px !important; max-height: calc(100vh - 24px); }
+}
+.card.focus { top: max(12px, 14vh); max-height: calc(100vh - 24px); overflow-y: auto; }
+.card.focus::-webkit-scrollbar, .stg main::-webkit-scrollbar, .stg nav::-webkit-scrollbar { width: 0; height: 0; }
+.bm { max-height: min(560px, calc(100vh - 60px)); }

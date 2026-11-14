@@ -3,3 +3,4 @@ dist/
 test/e2e/shots/
 *.log
 .DS_Store
+test/e2e/shots-sizes/

@@ -171,6 +171,7 @@ function normalize(raw) {
   if (!Array.isArray(state.bookmarks.children)) state.bookmarks.children = []
   if (!Array.isArray(state.archive)) state.archive = []
   if (!Array.isArray(state.snoozed)) state.snoozed = []
+  state.settings.sidebarWidth = Math.max(236, Math.min(440, Number(state.settings.sidebarWidth) || 262))
   if (state.focus && !(state.focus.endsAt > Date.now())) state.focus = null
   if (!state.settings.shortcuts || typeof state.settings.shortcuts !== 'object') state.settings.shortcuts = {}
   if (!Array.isArray(state.settings.airTraffic)) state.settings.airTraffic = []

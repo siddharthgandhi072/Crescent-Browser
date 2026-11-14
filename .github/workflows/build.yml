@@ -37,6 +37,10 @@ jobs:
         run: xvfb-run -a -s "-screen 0 1440x900x24" node test/e2e/run.js
         env:
           SHOTS: ${{ runner.temp }}/shots
+      - name: Layout check at several window sizes
+        run: xvfb-run -a -s "-screen 0 2000x1300x24" node test/e2e/sizes.js
+        env:
+          SHOTS: ${{ runner.temp }}/shots/sizes
       - uses: actions/upload-artifact@v4
         if: always()
         with:
