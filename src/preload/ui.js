@@ -5,7 +5,7 @@ const { contextBridge, ipcRenderer } = require('electron')
 
 const CHANNELS = new Set([
   'state', 'runtime', 'layout', 'toast', 'theme', 'downloads', 'extensions', 'rename', 'rename-space',
-  'overlay:open', 'overlay:close', 'find:result', 'peek:info', 'import:progress', 'settings:section', 'focus-url',
+  'overlay:open', 'overlay:close', 'find:result', 'peek:info', 'import:progress', 'settings:section', 'focus-url', 'update', 'library', 'note:focus',
 ])
 
 contextBridge.exposeInMainWorld('crescent', {

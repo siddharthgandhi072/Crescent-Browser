@@ -9,7 +9,6 @@ const { Tab, hostOf, roundRect } = require('./tab')
 const { resolveInput, displayUrl, queryFromSearchUrl } = require('./urls')
 const paths = require('./paths')
 
-const PAD = 8
 const GAP = 6
 const IS_MAC = process.platform === 'darwin'
 
@@ -29,7 +28,11 @@ class MainWindow {
     this.runtimeTimer = null
     this.findState = null
     this.closed = false
+    this.thumbs = new Map() // tab id -> { data, at } for hover previews
+    this.pipTabs = new Set()
   }
+
+  get pad() { return Math.max(0, Math.min(16, Number(this.settings.frameGap) || 0)) }
 
   get state() { return this.app.store.state }
   get settings() { return this.state.settings }
@@ -73,7 +76,12 @@ class MainWindow {
 
     this.win.on('resize', () => this.layout())
     this.win.on('enter-full-screen', () => { this.layout(); this.pushRuntime({ windowFullscreen: true }) })
-    this.win.on('leave-full-screen', () => { this.layout(); this.pushRuntime({ windowFullscreen: false }) })
+    this.win.on('leave-full-screen', () => {
+      this.layout(); this.pushRuntime({ windowFullscreen: false })
+      // Focus mode keeps you in full screen until the timer ends.
+      const f = this.state.focus
+      if (f && f.fullscreen && f.endsAt > Date.now()) setTimeout(() => { if (this.state.focus && !this.win.isDestroyed()) this.win.setFullScreen(true) }, 400)
+    })
     this.win.on('focus', () => this.app.setFocusedWindow(this))
     const saveBounds = debounce(() => this.saveBounds(), 500)
     this.win.on('move', saveBounds)
@@ -88,6 +96,9 @@ class MainWindow {
     this.layout()
     this.applyWindowButtons()
     this.memoryTimer = setInterval(() => this.memorySaver(), 60 * 1000)
+    this.snoozeTimer = setInterval(() => this.wakeSnoozed(), 30 * 1000)
+    setTimeout(() => this.wakeSnoozed(), 3000)
+    if (this.state.focus) this.win.once('ready-to-show', () => setTimeout(() => this.applyFocus(), 300))
     return this
   }
 
@@ -101,6 +112,8 @@ class MainWindow {
   onClosed() {
     this.closed = true
     clearInterval(this.memoryTimer)
+    clearInterval(this.snoozeTimer)
+    clearTimeout(this.focusTimer)
     for (const t of this.tabs.values()) { this.app.extensions?.removeTab(t.wc); t.destroy() }
     this.tabs.clear()
     if (this.peek) this.peek.tab.destroy()
@@ -152,7 +165,7 @@ class MainWindow {
       if (this.overlayMode !== mode) return
       this.overlay.setVisible(true)
       this.restack()
-      if (mode !== 'toast') this.overlay.webContents.focus()
+      if (mode !== 'toast' && mode !== 'focusbar') this.overlay.webContents.focus()
     }
     clearTimeout(this.overlayReady)
     this.overlayShow = show
@@ -177,6 +190,8 @@ class MainWindow {
     if (wasPrompt) this.app.permissions.cancelAll() // never leave a site waiting forever
     if (this.peek) this.closePeek()
     if (refocus) this.focusActive()
+    // The focus timer stays on screen for the whole session.
+    if (this.state.focus && !this.overlayMode) setTimeout(() => { if (!this.overlayMode && this.state.focus) this.openOverlay('focusbar', { focus: this.state.focus }) }, 30)
   }
 
   overlayBounds() {
@@ -185,6 +200,8 @@ class MainWindow {
     const c = this.contentRect()
     if (this.overlayMode === 'find') {
       this.overlay.setBounds(roundRect({ x: c.x + c.width - 372, y: c.y + 10, width: 362, height: 56 }))
+    } else if (this.overlayMode === 'focusbar') {
+      this.overlay.setBounds(roundRect({ x: c.x + c.width - 252, y: c.y + 10, width: 242, height: 56 }))
     } else if (this.overlayMode === 'toast') {
       this.overlay.setBounds(roundRect({ x: c.x + c.width / 2 - 200, y: c.y + c.height - 70, width: 400, height: 60 }))
     } else {
@@ -208,19 +225,20 @@ class MainWindow {
   contentRect() {
     const [w, h] = this.win.getContentSize()
     if (this.htmlFullscreen) return { x: 0, y: 0, width: w, height: h }
+    const pad = this.pad
     const sbw = this.settings.sidebarWidth
     const hidden = this.settings.sidebarHidden
     const right = this.settings.sidebarRight
     let x, width
     if (hidden) {
-      x = PAD; width = w - PAD * 2
-      if (this.sidebarPeek) x += right ? -(sbw - PAD) : sbw - PAD // slide, don't resize
+      x = pad; width = w - pad * 2
+      if (this.sidebarPeek) x += right ? -(sbw - pad) : sbw - pad // slide, don't resize
     } else if (right) {
-      x = PAD; width = w - sbw - PAD
+      x = pad; width = w - sbw - pad
     } else {
-      x = sbw; width = w - sbw - PAD
+      x = sbw; width = w - sbw - pad
     }
-    return { x, y: PAD, width: Math.max(100, width), height: Math.max(100, h - PAD * 2) }
+    return { x, y: pad, width: Math.max(100, width), height: Math.max(100, h - pad * 2) }
   }
 
   displayRects() {
@@ -229,19 +247,23 @@ class MainWindow {
     if (ids.length <= 1) return ids.map(id => ({ id, ...c }))
     const split = M.splitOf(this.state, ids[0])
     const sizes = split && split.sizes && split.sizes.length === ids.length ? split.sizes : ids.map(() => 1 / ids.length)
-    const usable = c.width - GAP * (ids.length - 1)
-    let x = c.x
+    const column = split && split.orientation === 'column'
+    const total = column ? c.height : c.width
+    const usable = total - GAP * (ids.length - 1)
+    let pos = column ? c.y : c.x
+    const end = pos + total
     return ids.map((id, i) => {
-      const width = i === ids.length - 1 ? c.x + c.width - x : usable * sizes[i]
-      const r = { id, x, y: c.y, width, height: c.height }
-      x += width + GAP
+      const len = i === ids.length - 1 ? end - pos : usable * sizes[i]
+      const r = column ? { id, x: c.x, y: pos, width: c.width, height: len } : { id, x: pos, y: c.y, width: len, height: c.height }
+      pos += len + GAP
       return r
     })
   }
 
   layoutInfo() {
     const [w, h] = this.win.getContentSize()
-    return { width: w, height: h, content: this.contentRect(), rects: this.displayRects(), fullscreen: this.htmlFullscreen }
+    const split = this.display.length > 1 ? M.splitOf(this.state, this.display[0]) : null
+    return { width: w, height: h, content: this.contentRect(), rects: this.displayRects(), fullscreen: this.htmlFullscreen, orientation: split ? split.orientation : 'row', radius: this.settings.pageRadius }
   }
 
   layout() {
@@ -282,8 +304,11 @@ class MainWindow {
     if (t) return t
     const loc = M.locate(this.state, id)
     if (!loc || loc.item.type !== 'tab') return null
-    t = new Tab({ id, url: loc.item.url, session: this.app.browseSession, background: this.pageBackground() })
+    const priv = !!(loc.space && loc.space.private)
+    t = new Tab({ id, url: null, session: priv ? this.app.privateSession() : this.app.browseSession, background: this.pageBackground(), radius: this.settings.pageRadius })
+    t.private = priv
     this.adoptTab(t)
+    if (loc.item.url) t.load(loc.item.url)
     return t
   }
 
@@ -291,6 +316,8 @@ class MainWindow {
   adoptTab(t) {
     t.removeAllListeners()
     this.tabs.set(t.id, t)
+    t.guard = url => this.focusAllows(url)
+    t.on('blocked', url => this.showBlocked(t, url))
     t.on('update', patch => this.onTabUpdate(t, patch))
     t.on('navigated', ({ url, inPage }) => this.onTabNavigated(t, url, inPage))
     t.on('hover', url => { if (this.isDisplayed(t.id)) { this.hoverUrl = url; this.pushRuntime({ hoverUrl: url }) } })
@@ -309,8 +336,14 @@ class MainWindow {
     wc.on('enter-html-full-screen', () => this.setHtmlFullscreen(true))
     wc.on('leave-html-full-screen', () => this.setHtmlFullscreen(false))
     wc.on('before-input-event', (e, input) => this.onPageInput(t, e, input))
-    this.app.extensions?.addTab(wc, this.win)
+    if (!t.private) this.app.extensions?.addTab(wc, this.win)
     this.pushRuntime({ tabs: { [t.id]: { ...t.info, live: true } } })
+  }
+
+  showBlocked(t, url) {
+    const q = new URLSearchParams({ url: url || '', until: String(this.state.focus ? this.state.focus.endsAt : 0) })
+    t.wc.loadURL(paths.page('blocked.html') + '?' + q.toString()).catch(() => {})
+    t.info.url = url
   }
 
   pageBackground() { return nativeTheme.shouldUseDarkColors ? '#1d1b21' : '#ffffff' }
@@ -319,6 +352,8 @@ class MainWindow {
     this.pushRuntime({ tabs: { [t.id]: { ...patch, live: true } } })
     const loc = M.locate(this.state, t.id)
     if (!loc) return
+    // Error and focus-blocked pages never rename or re-icon the saved tab.
+    if (isInternal(t.wc.isDestroyed() ? '' : t.wc.getURL())) return
     const item = loc.item
     let dirty = false
     if (patch.title && !item.customTitle && item.title !== patch.title && !isInternal(t.info.url)) {
@@ -339,7 +374,7 @@ class MainWindow {
       loc.item.url = url
       this.pushState(true)
     }
-    if (!inPage) this.app.history.visit(url, t.info.title, false)
+    if (!inPage && !t.private) this.app.history.visit(url, t.info.title, false)
   }
 
   showError(t, err) {
@@ -363,26 +398,58 @@ class MainWindow {
   select(id, { focus = true } = {}) {
     if (this.closed) return
     const loc = M.locate(this.state, id)
-    if (!loc || loc.item.type !== 'tab') return
+    if (!loc || (loc.item.type !== 'tab' && loc.item.type !== 'note')) return
     if (loc.space && loc.space.id !== this.state.activeSpaceId) {
       this.state.activeSpaceId = loc.space.id
     }
+    const outgoing = this.display.filter(d => this.tabs.has(d))
     const space = this.space
     space.activeId = id
-    const split = loc.parent && loc.parent.type === 'split' ? loc.parent : null
-    this.display = split ? split.children.map(c => c.id) : [id]
-    for (const did of this.display) this.ensureTab(did)
+    if (loc.item.unread) delete loc.item.unread
+    if (loc.item.type === 'note') {
+      // Notes are drawn by the sidebar renderer in the page area.
+      this.display = []
+    } else {
+      const split = loc.parent && loc.parent.type === 'split' ? loc.parent : null
+      this.display = split ? split.children.map(c => c.id) : [id]
+      for (const did of this.display) this.ensureTab(did)
+    }
+    this.leaving(outgoing.filter(o => !this.display.includes(o)))
     this.touchMru(id)
     this.layout()
     this.restack()
     const t = this.tabs.get(id)
     if (t) {
-      this.app.extensions?.selectTab(t.wc)
+      if (!t.private) this.app.extensions?.selectTab(t.wc)
       if (focus && !this.overlayMode) t.wc.focus()
+      if (this.pipTabs.has(t.id)) { this.pipTabs.delete(t.id); t.wc.executeJavaScript('document.pictureInPictureElement && document.exitPictureInPicture()', true).catch(() => {}) }
+    } else if (loc.item.type === 'note') {
+      this.wc.focus()
     }
     this.hoverUrl = ''
     this.pushState(true)
     this.pushRuntime({ hoverUrl: '' })
+  }
+
+  // Tabs going out of view: snapshot for hover previews, and pop playing
+  // video into picture-in-picture (Arc's auto PiP).
+  leaving(ids) {
+    for (const oid of ids) {
+      const t = this.tabs.get(oid)
+      if (!t || t.destroyed) continue
+      if (this.settings.tabPreviews && t.info.url && !t.info.url.startsWith('crescent:')) {
+        t.wc.capturePage().then(img => {
+          if (img.isEmpty()) return
+          const small = img.resize({ width: 480, quality: 'good' })
+          this.thumbs.set(oid, { data: small.toDataURL(), at: Date.now() })
+          if (this.thumbs.size > 60) this.thumbs.delete(this.thumbs.keys().next().value)
+        }).catch(() => {})
+      }
+      if (this.settings.autoPip && t.info.playing && t.info.video) {
+        t.wc.executeJavaScript(`(() => { const v = [...document.querySelectorAll('video')].find(v => !v.paused && v.videoWidth > 0); if (v && !document.pictureInPictureElement && !v.disablePictureInPicture) return v.requestPictureInPicture().then(() => true, () => false); return false })()`, true)
+          .then(ok => { if (ok) this.pipTabs.add(oid) }).catch(() => {})
+      }
+    }
   }
 
   showNothing() {
@@ -404,13 +471,29 @@ class MainWindow {
     else this.wc.focus()
   }
 
+  engine() {
+    const s = this.settings
+    return s.searchEngine === 'custom' && /%s/.test(s.customSearchUrl || '') ? s.customSearchUrl : s.searchEngine
+  }
+
   newTab(input, opts = {}) {
-    const r = typeof input === 'string' ? resolveInput(input, this.settings.searchEngine) : input
+    const r = typeof input === 'string' ? resolveInput(input, this.engine()) : input
     if (!r) return null
     const space = opts.spaceId ? M.getSpace(this.state, opts.spaceId) : this.space
+    // Already open? Go there instead of opening a second copy.
+    if (opts.typed && !r.isSearch && this.settings.duplicateTabGuard) {
+      const norm = u => String(u || '').replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')
+      const want = norm(r.url)
+      for (const id of M.spaceTabIds(this.state, space)) {
+        const live = this.tabs.get(id)
+        const loc = M.locate(this.state, id)
+        if (norm(live ? live.info.url : loc.item.url) === want) { this.select(id); this.toast('Switched to the open tab'); return loc.item }
+      }
+    }
     const tab = M.addTab(this.state, space.id, { url: r.url, title: opts.title || displayUrl(r.url) || r.url }, opts)
-    if (r.isSearch === false && opts.typed) this.app.history.visit(r.url, '', true)
+    if (r.isSearch === false && opts.typed && !space.private) this.app.history.visit(r.url, '', true)
     if (opts.background) {
+      if (this.settings.unreadDots) tab.unread = true
       this.ensureTab(tab.id)
       this.pushState(true)
     } else {
@@ -420,7 +503,7 @@ class MainWindow {
   }
 
   navigate(id, input) {
-    const r = resolveInput(input, this.settings.searchEngine)
+    const r = resolveInput(input, this.engine())
     if (!r) return
     const t = this.ensureTab(id || this.space.activeId)
     if (!t) { this.newTab(r); return }
@@ -667,7 +750,7 @@ class MainWindow {
 
   splitWithNew(input) {
     const cur = this.space.activeId
-    const r = resolveInput(input, this.settings.searchEngine)
+    const r = resolveInput(input, this.engine())
     if (!r) return
     const existingSplit = cur && M.splitOf(this.state, cur)
     if (existingSplit) {
@@ -719,6 +802,13 @@ class MainWindow {
     this.applyWindowButtons()
     this.layout()
     this.pushRuntime({ sidebarPeek: this.sidebarPeek })
+  }
+
+  applyAppearance() {
+    const r = Math.max(0, Math.min(16, Number(this.settings.pageRadius) || 0))
+    for (const t of this.tabs.values()) if (t.view.setBorderRadius) t.view.setBorderRadius(r)
+    this.layout()
+    this.pushState(true)
   }
 
   setSidebarWidth(px) {
@@ -814,6 +904,190 @@ class MainWindow {
     }
   }
 
+  // ---------- focus mode ----------
+
+  focusAllows(url) {
+    const f = this.state.focus
+    if (!f || !url) return true
+    if (f.endsAt <= Date.now()) { setImmediate(() => this.endFocus(true)); return true }
+    if (/^(crescent|chrome-extension|about|data|blob|devtools|chrome|view-source):/i.test(url)) return true
+    let u
+    try { u = new URL(url) } catch { return true }
+    if (!/^https?:$/.test(u.protocol)) return true
+    const host = u.hostname.replace(/^www\./, '')
+    if (isSearchPage(u)) return true
+    if (/^(accounts\.google\.com|accounts\.youtube\.com|login\.microsoftonline\.com|appleid\.apple\.com)$/.test(host)) return true
+    if ((f.sites || []).some(d => d && (host === d || host.endsWith('.' + d)))) return true
+    let hay = u.href.toLowerCase()
+    try { hay = decodeURIComponent(hay) } catch {}
+    if ((f.words || []).some(w => w && hay.includes(w.toLowerCase()))) return true
+    return false
+  }
+
+  startFocus({ minutes, sites, words, fullscreen = true } = {}) {
+    const mins = Math.max(1, Math.min(600, Number(minutes) || 25))
+    const clean = list => [...new Set((Array.isArray(list) ? list : []).map(x => String(x).trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '')).filter(Boolean))].slice(0, 100)
+    const cleanWords = list => [...new Set((Array.isArray(list) ? list : []).map(x => String(x).trim().toLowerCase()).filter(Boolean))].slice(0, 100)
+    const s = this.settings
+    s.focusSites = clean(sites)
+    s.focusWords = cleanWords(words)
+    s.focusMinutes = mins
+    this.state.focus = { startedAt: Date.now(), endsAt: Date.now() + mins * 60000, sites: s.focusSites, words: s.focusWords, prevSidebarHidden: s.sidebarHidden, fullscreen }
+    this.applyFocus()
+    this.app.store.save()
+  }
+
+  // Puts the window into focus state (also used to resume after a restart).
+  applyFocus() {
+    const f = this.state.focus
+    if (!f) return
+    this.closeOverlay({ refocus: false })
+    this.settings.sidebarHidden = true
+    this.sidebarPeek = false
+    if (f.fullscreen && !this.win.isFullScreen()) this.win.setFullScreen(true)
+    this.applyWindowButtons()
+    this.layout()
+    for (const id of this.display) {
+      const t = this.tabs.get(id)
+      if (t && !this.focusAllows(t.info.url)) this.showBlocked(t, t.info.url)
+    }
+    clearTimeout(this.focusTimer)
+    this.focusTimer = setTimeout(() => this.endFocus(true), Math.max(0, f.endsAt - Date.now()))
+    this.openOverlay('focusbar', { focus: f })
+    this.pushState()
+  }
+
+  endFocus(finished = false) {
+    const f = this.state.focus
+    if (!f) return
+    this.state.focus = null
+    clearTimeout(this.focusTimer)
+    this.settings.sidebarHidden = !!f.prevSidebarHidden
+    if (this.overlayMode === 'focusbar') this.closeOverlay({ refocus: false })
+    if (f.fullscreen && this.win.isFullScreen()) this.win.setFullScreen(false)
+    this.applyWindowButtons()
+    this.layout()
+    // Pages that were blocked come back.
+    for (const id of this.display) {
+      const t = this.tabs.get(id)
+      if (t && t.wc.getURL().startsWith('crescent://app/pages/blocked')) t.load(t.info.url)
+    }
+    this.pushState(true)
+    this.toast(finished ? 'Focus session complete' : 'Focus session ended')
+  }
+
+  // ---------- library (lives in the sidebar, like Arc) ----------
+
+  openLibrary(tab = 'archive') {
+    if (this.overlayMode && this.overlayMode !== 'focusbar') this.closeOverlay({ refocus: false })
+    if (this.settings.sidebarHidden) this.setSidebarPeek(true)
+    this.wc.send('library', tab)
+  }
+
+  // ---------- private space ----------
+
+  openPrivateSpace() {
+    const s = M.addPrivateSpace(this.state)
+    this.switchSpace(s.id)
+    this.pushState()
+    if (!s.today.length && !s.activeId) setTimeout(() => { if (this.space.private && !this.space.activeId && !this.overlayMode) this.openOverlay('command', { mode: 'new' }) }, 200)
+  }
+
+  endPrivateSpace() {
+    const s = this.state.spaces.find(x => x.private)
+    if (!s) return
+    for (const t of [...M.tabsIn(s.today), ...M.tabsIn(s.pinned)]) this.destroyTab(t.id)
+    const wasActive = this.state.activeSpaceId === s.id
+    this.state.spaces = this.state.spaces.filter(x => x !== s)
+    if (this.app._private) this.app._private.clearStorageData().catch(() => {})
+    if (wasActive) {
+      this.state.activeSpaceId = this.state.spaces[0].id
+      const sp = this.space
+      if (sp.activeId && M.locate(this.state, sp.activeId)) this.select(sp.activeId)
+      else this.showNothing()
+    }
+    this.pushState()
+    this.toast('Private session cleared')
+  }
+
+  // ---------- snooze ----------
+
+  snooze(id = this.space.activeId, when = 'tomorrow') {
+    const loc = M.locate(this.state, id)
+    if (!loc || loc.item.type !== 'tab' || (loc.space && loc.space.private)) return
+    const until = snoozeTime(when)
+    const wasShown = this.isDisplayed(id)
+    const next = wasShown && loc.zone === 'today' ? M.neighbourAfterClose(this.state, id) : null
+    const t = this.tabs.get(id)
+    if (t) loc.item.url = t.info.url || loc.item.url
+    if (!M.snoozeTab(this.state, id, until)) return
+    if (loc.zone === 'today') {
+      this.destroyTab(id)
+      if (wasShown) { const target = next || this.fallbackSelection([id]); if (target) this.select(target); else this.showNothing() }
+    }
+    this.pushState(true)
+    this.toast(`Snoozed until ${new Date(until).toLocaleString(undefined, { weekday: 'short', hour: 'numeric', minute: '2-digit' })}`)
+  }
+
+  wakeSnoozed() {
+    const ids = M.wakeSnoozed(this.state)
+    if (!ids.length) return
+    this.pushState(true)
+    this.toast(ids.length === 1 ? 'A snoozed tab is back' : `${ids.length} snoozed tabs are back`)
+  }
+
+  // ---------- notes ----------
+
+  newNote(opts = {}) {
+    const n = M.addNote(this.state, this.space.id, opts)
+    this.select(n.id)
+    setTimeout(() => this.wc.send('note:focus', n.id), 60)
+    return n.id
+  }
+
+  // ---------- split extras ----------
+
+  splitDrop(draggedId, targetId) {
+    const r = M.splitByDrop(this.state, draggedId, targetId)
+    if (!r) return false
+    this.select(r.focus)
+    return true
+  }
+
+  splitOrientation(orientation) {
+    const split = M.splitOf(this.state, this.space.activeId)
+    if (split && M.setSplitOrientation(this.state, split.id, orientation)) { this.layout(); this.pushState(true) }
+  }
+
+  splitSwap() {
+    const split = M.splitOf(this.state, this.space.activeId)
+    if (split && M.swapSplit(this.state, split.id)) { this.display = split.children.map(c => c.id); this.layout(); this.pushState(true) }
+  }
+
+  // ---------- media ----------
+
+  mediaToggle(id) {
+    const t = this.tabs.get(id)
+    if (!t) return
+    t.wc.executeJavaScript(`(() => { const all = [...document.querySelectorAll('video,audio')]; const on = all.filter(m => !m.paused); if (on.length) { on.forEach(m => m.pause()); return false } const m = all.find(m => m.currentTime > 0) || all[0]; if (m) { m.play(); return true } return null })()`, true).catch(() => {})
+  }
+
+  mediaSkip(id, dir) {
+    const t = this.tabs.get(id)
+    if (!t) return
+    t.wc.executeJavaScript(`(() => { const m = [...document.querySelectorAll('video,audio')].find(m => !m.paused) || document.querySelector('video,audio'); if (m) m.currentTime = Math.max(0, m.currentTime + (${dir > 0 ? 10 : -10})) })()`, true).catch(() => {})
+  }
+
+  async preview(id) {
+    if (!this.settings.tabPreviews) return null
+    const t = this.tabs.get(id)
+    if (t && this.isDisplayed(id)) {
+      try { const img = await t.wc.capturePage(); if (!img.isEmpty()) return img.resize({ width: 480, quality: 'good' }).toDataURL() } catch {}
+    }
+    const c = this.thumbs.get(id)
+    return c ? c.data : null
+  }
+
   // ---------- sidebar context menus (native) ----------
 
   itemMenu(id) {
@@ -855,7 +1129,8 @@ class MainWindow {
       tpl.push({ type: 'separator' })
       const active = this.space.activeId
       if (active && active !== id && !M.splitOf(this.state, id)) tpl.push({ label: 'Open in Split View', click: () => this.splitWith(id) })
-      if (M.splitOf(this.state, id)) tpl.push({ label: 'Separate Split View', click: () => { const s = M.splitOf(this.state, id); M.unsplit(this.state, s.id); this.select(id) } })
+      if (M.splitOf(this.state, id)) tpl.push(...this.splitMenu(M.splitOf(this.state, id), id))
+      if (!loc.space || !loc.space.private) tpl.push({ label: 'Snooze', submenu: [['later', 'Later Today (3 hours)'], ['evening', 'This Evening'], ['tomorrow', 'Tomorrow Morning'], ['weekend', 'This Weekend'], ['nextweek', 'Next Week']].map(([w, l]) => ({ label: l, click: () => this.snooze(id, w) })) })
       if (t) tpl.push({ label: t.info.muted ? 'Unmute' : 'Mute', click: () => t.setMuted(!t.info.muted) })
       if (t && !this.isDisplayed(id)) tpl.push({ label: 'Unload Tab (free memory)', click: () => this.unloadTab(id) })
       tpl.push({ type: 'separator' })
@@ -865,10 +1140,37 @@ class MainWindow {
         tpl.push({ label: zone === 'favorites' ? 'Remove from Pinned Bar' : 'Delete Pinned Tab', click: () => this.deleteItem(id) })
       }
     } else if (item.type === 'split') {
-      tpl.push({ label: 'Separate Split View', click: () => { M.unsplit(this.state, id); this.pushState(true); if (this.space.activeId) this.select(this.space.activeId) } })
-      tpl.push({ label: 'Close Split', click: () => this.closeTab(item.children[0].id) })
+      tpl.push(...this.splitMenu(item, item.children[0].id))
+      tpl.push({ type: 'separator' })
+      tpl.push({ label: 'Close Split', click: () => { for (const c of [...item.children]) this.closeTab(c.id) } })
+    } else if (item.type === 'note') {
+      tpl.push({ label: 'Rename…', click: () => this.wc.send('rename', id) })
+      if (loc.zone === 'today') tpl.push({ label: 'Pin Note', click: () => { M.moveItem(this.state, id, { spaceId: this.space.id, zone: 'pinned' }); this.pushState(true) } })
+      else tpl.push({ label: 'Unpin Note', click: () => { M.moveItem(this.state, id, { spaceId: this.space.id, zone: 'today', index: 0 }); this.pushState(true) } })
+      tpl.push({ label: 'Copy Text', click: () => clipboard.writeText((item.title ? item.title + '\n\n' : '') + item.body) })
+      tpl.push({ type: 'separator' })
+      tpl.push({
+        label: 'Delete Note…', click: async () => {
+          const { response } = await require('electron').dialog.showMessageBox(this.win, { type: 'warning', buttons: ['Delete', 'Cancel'], defaultId: 1, cancelId: 1, message: `Delete “${item.title || 'Untitled'}”?`, detail: 'Notes can’t be restored after deleting.' })
+          if (response !== 0) return
+          const shown = this.space.activeId === id
+          M.detach(this.state, id)
+          if (shown) { const n = this.fallbackSelection([id]); if (n) this.select(n); else this.showNothing() } else this.pushState(true)
+        },
+      })
     }
     Menu.buildFromTemplate(tpl).popup({ window: this.win })
+  }
+
+  splitMenu(split, focusId) {
+    const pick = fn => () => { this.select(focusId); fn() }
+    return [
+      { label: 'Side by Side', type: 'radio', checked: split.orientation !== 'column', click: pick(() => this.splitOrientation('row')) },
+      { label: 'Top and Bottom', type: 'radio', checked: split.orientation === 'column', click: pick(() => this.splitOrientation('column')) },
+      { label: split.orientation === 'column' ? 'Swap Top and Bottom' : 'Swap Left and Right', click: pick(() => this.splitSwap()) },
+      { label: 'Equal Sizes', click: pick(() => this.setSplitSizes(split.children.map(() => 1 / split.children.length))) },
+      { label: 'Separate Tabs', click: () => { M.unsplit(this.state, split.id); this.select(focusId) } },
+    ]
   }
 
   closeDisplayedMoved(id) {
@@ -920,6 +1222,29 @@ class MainWindow {
         },
       },
     ]).popup({ window: this.win })
+  }
+}
+
+function isSearchPage(u) {
+  const h = u.hostname.replace(/^www\./, '')
+  const p = u.pathname
+  if (/^google\.[a-z.]+$/.test(h)) return p === '/' || p === '/search' || p === '/webhp' || p.startsWith('/complete')
+  if (h === 'duckduckgo.com' || h === 'html.duckduckgo.com') return true
+  if (h === 'bing.com') return p === '/' || p === '/search'
+  if (h === 'search.brave.com' || h === 'kagi.com' || h === 'ecosia.org') return true
+  return false
+}
+
+function snoozeTime(when) {
+  const d = new Date()
+  const at = (days, hour) => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate() + days, hour, 0, 0); return x.getTime() }
+  if (typeof when === 'number') return when
+  switch (when) {
+    case 'later': return Date.now() + 3 * 3600 * 1000
+    case 'evening': return d.getHours() < 17 ? at(0, 18) : Date.now() + 3600 * 1000
+    case 'weekend': { const add = (6 - d.getDay() + 7) % 7 || 7; return at(add, 9) }
+    case 'nextweek': { const add = (8 - d.getDay()) % 7 || 7; return at(add, 9) }
+    default: return at(1, 9) // tomorrow morning
   }
 }
 

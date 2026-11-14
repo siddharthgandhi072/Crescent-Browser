@@ -70,11 +70,34 @@ class Adblock {
     this.setEnabled(this.c.store.state.settings.adblock)
   }
 
+  // Extra sessions (private browsing) share the same engine. Ghostery's
+  // helper can only own one session, so wire the others by hand.
+  attachExtra(ses) {
+    this.extra = this.extra || new Set()
+    this.extra.add(ses)
+    if (this.enabled) this.wireExtra(ses, true)
+  }
+
+  wireExtra(ses, on) {
+    if (!this.blocker) return
+    if (on) {
+      ses.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (d, cb) => this.blocker.onBeforeRequest(d, cb))
+      ses.webRequest.onHeadersReceived({ urls: ['<all_urls>'] }, (d, cb) => this.blocker.onHeadersReceived(d, cb))
+      try {
+        const PRELOAD_PATH = require.resolve('@ghostery/adblocker-electron-preload')
+        this.extraPreload = ses.registerPreloadScript({ type: 'frame', filePath: PRELOAD_PATH })
+      } catch {}
+    } else {
+      ses.webRequest.onBeforeRequest(null)
+      ses.webRequest.onHeadersReceived(null)
+    }
+  }
+
   setEnabled(on) {
     if (!this.blocker) return
     const s = this.c.browseSession
-    if (on && !this.enabled) { this.blocker.enableBlockingInSession(s); this.enabled = true }
-    if (!on && this.enabled) { this.blocker.disableBlockingInSession(s); this.enabled = false }
+    if (on && !this.enabled) { this.blocker.enableBlockingInSession(s); this.enabled = true; for (const x of this.extra || []) this.wireExtra(x, true) }
+    if (!on && this.enabled) { this.blocker.disableBlockingInSession(s); this.enabled = false; for (const x of this.extra || []) this.wireExtra(x, false) }
   }
 
   status(tab) {

@@ -15,8 +15,10 @@ class Downloads {
     this.items = new Map() // id -> DownloadItem (live only)
     // Anything that was mid-download when we quit is marked interrupted.
     for (const d of this.file.data) if (d.state === 'progressing') d.state = 'interrupted'
-    c.browseSession.on('will-download', (e, item, wc) => this.onDownload(item, wc))
+    this.attach(c.browseSession)
   }
+
+  attach(ses) { ses.on('will-download', (e, item, wc) => this.onDownload(item, wc)) }
 
   onDownload(item, wc) {
     const id = M.uid('d')

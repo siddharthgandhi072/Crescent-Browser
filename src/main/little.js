@@ -19,7 +19,14 @@ class LittleWindow extends EventEmitter {
     this.c = c
     this.private = priv
     this.session = priv ? session.fromPartition('private-' + M.uid('p')) : c.browseSession
-    if (priv) paths.registerProtocol(this.session, { pagesOnly: true })
+    if (priv) {
+      paths.registerProtocol(this.session, { pagesOnly: true })
+      require('./compat').install(this.session)
+      c.permissions.attach(this.session)
+      c.downloads.attach(this.session)
+      c.adblock.attachExtra(this.session)
+      this.session.registerPreloadScript({ type: 'frame', filePath: paths.preload('page.js'), id: 'crescent-page' })
+    }
     const focused = BrowserWindow.getFocusedWindow()
     const near = focused ? focused.getBounds() : null
     this.win = new BrowserWindow({
@@ -36,7 +43,7 @@ class LittleWindow extends EventEmitter {
     this.win.webContents.on('will-navigate', e => e.preventDefault())
     this.win.webContents.loadURL(paths.ui('little/index.html') + (priv ? '?private=1' : ''))
     this.win.once('ready-to-show', () => this.win.show())
-    const resolved = url ? resolveInput(url, c.store.state.settings.searchEngine) : null
+    const resolved = url ? resolveInput(url, c.engine()) : null
     url = resolved ? resolved.url : ''
     this.tab = new Tab({ id: 'little', url: url || null, session: this.session, background: '#ffffff' })
     this.bindTab()
@@ -94,7 +101,7 @@ class LittleWindow extends EventEmitter {
   runtime() { return { tabs: { little: this.tab ? { ...this.tab.info } : {} }, private: this.private } }
 
   navigate(input) {
-    const r = resolveInput(input, this.c.store.state.settings.searchEngine)
+    const r = resolveInput(input, this.c.engine())
     if (!r) return
     this.tab.load(r.url)
     this.tab.wc.focus()

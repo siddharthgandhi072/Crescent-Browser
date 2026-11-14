@@ -60,7 +60,7 @@ class Search {
     const openUrls = new Set(out.tabs.map(t => t.url).concat(out.bookmarks.map(b => b.url)))
     out.history = this.c.history.search(text, 12).filter(h => !openUrls.has(h.url)).slice(0, 5)
       .map(h => ({ url: h.url, title: h.title || displayUrl(h.url), last: h.last }))
-    const r = resolveInput(q, state.settings.searchEngine)
+    const r = resolveInput(q, this.c.engine())
     if (r && !r.isSearch) out.resolved = r.url
     // Inline completion: best history URL that starts with what you typed.
     const best = this.c.history.search(text, 20).map(h => displayUrl(h.url)).find(u => u.toLowerCase().startsWith(text) && u.length > text.length)

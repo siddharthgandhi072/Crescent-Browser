@@ -64,6 +64,8 @@ class CrescentApp {
     paths.registerProtocol(this.uiSession)
     paths.registerProtocol(this.browseSession, { pagesOnly: true })
     this.browseSession.setSpellCheckerLanguages?.(['en-US'])
+    require('./compat').setGpc(this.store.state.settings.globalPrivacyControl !== false)
+    require('./compat').install(this.browseSession)
     this.browseSession.registerPreloadScript({ type: 'frame', filePath: paths.preload('page.js'), id: 'crescent-page' })
 
     this.actions = new Actions(this)
@@ -73,6 +75,7 @@ class CrescentApp {
     this.search = new Search(this)
     this.passwords = new Passwords(this, dir)
     this.windows = new Windows(this)
+    this.updater = new (require('./updater').Updater)(this)
     this.adblock = new Adblock(this, dir)
     this.extensions = new Extensions(this)
 
@@ -90,8 +93,29 @@ class CrescentApp {
     else this.ensureMain()
 
     for (const u of this.pendingUrls.splice(0)) this.openExternalUrl(u)
+    if (!process.env.CRESCENT_TEST) this.updater.start()
 
     app.on('activate', () => { if (!this.windows.setup) this.ensureMain().focus() })
+  }
+
+  engine() {
+    const s = this.store.state.settings
+    return s.searchEngine === 'custom' && /%s/.test(s.customSearchUrl || '') ? s.customSearchUrl : s.searchEngine
+  }
+
+  // In-memory session for the private space and private windows' tabs.
+  privateSession() {
+    if (this._private) return this._private
+    const ses = session.fromPartition('crescent-private')
+    this._private = ses
+    const step = fn => { try { fn() } catch (e) { console.error('[private]', e.message) } }
+    step(() => paths.registerProtocol(ses, { pagesOnly: true }))
+    step(() => require('./compat').install(ses))
+    step(() => ses.registerPreloadScript({ type: 'frame', filePath: paths.preload('page.js'), id: 'crescent-page' }))
+    step(() => this.permissions.attach(ses))
+    step(() => this.downloads.attach(ses))
+    step(() => this.adblock.attachExtra(ses))
+    return ses
   }
 
   ensureMain() {
@@ -143,9 +167,27 @@ class CrescentApp {
   }
 
   // Links from other apps (Crescent as default browser).
-  openExternalUrl(url) {
+  async openExternalUrl(url) {
     if (!/^(https?|file):/i.test(url)) return
     if (!this.store) { this.pendingUrls.push(url); return }
+    // Air Traffic Control: rules send links to a chosen space.
+    const rules = this.store.state.settings.airTraffic || []
+    if (rules.length) {
+      const app = rules.some(r => r.app) ? await frontmostApp() : ''
+      const rule = rules.find(r => {
+        const urlOk = !r.url || url.toLowerCase().includes(r.url.toLowerCase())
+        const appOk = !r.app || (app && app.toLowerCase().includes(r.app.toLowerCase()))
+        return urlOk && appOk && (r.url || r.app)
+      })
+      const space = rule && this.store.state.spaces.find(s => s.id === rule.spaceId)
+      if (space) {
+        const m = this.ensureMain()
+        m.switchSpace(space.id)
+        m.newTab({ url, isSearch: false }, { spaceId: space.id })
+        m.focus()
+        return
+      }
+    }
     if (this.store.state.settings.littleCrescent) {
       const w = new LittleWindow(this, { url })
       this.littles.add(w)
@@ -164,6 +206,24 @@ class CrescentApp {
     try { this.history.close() } catch {}
   }
 }
+
+// The app that was in front when a link was clicked (for Air Traffic
+// Control rules like "links from Slack go to Work"). Best effort, no prompts.
+function frontmostApp() {
+  if (process.platform !== 'darwin') return Promise.resolve('')
+  const { execFile } = require('node:child_process')
+  return new Promise(resolve => {
+    execFile('/usr/bin/lsappinfo', ['info', '-only', 'name', '-app', 'front'], { timeout: 800 }, (err, out) => {
+      if (err) return resolve('')
+      const m = /"(?:LSDisplayName|name)"\s*=\s*"([^"]+)"/i.exec(String(out))
+      const name = m ? m[1] : ''
+      resolve(name === 'Crescent' ? (lastFront || '') : name)
+    })
+  })
+}
+let lastFront = ''
+// Remember which app took over when Crescent went to the background.
+app.on('did-resign-active', () => setTimeout(() => frontmostApp().then(n => { if (n && n !== 'Crescent') lastFront = n }), 400))
 
 const crescent = new CrescentApp()
 if (process.env.CRESCENT_TEST) global.__crescent = crescent

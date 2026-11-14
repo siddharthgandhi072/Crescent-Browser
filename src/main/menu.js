@@ -1,29 +1,37 @@
 'use strict'
 // The app menu doubles as the keyboard shortcut table. Menu accelerators
 // work no matter which page or panel has focus, which is what makes the
-// shortcuts reliable.
+// shortcuts reliable. Accelerators come from shortcuts.js (remappable).
 
 const { app, Menu, BrowserWindow } = require('electron')
+const { byId, accelFor } = require('./shortcuts')
 const IS_MAC = process.platform === 'darwin'
 
-function buildMenu(c) {
+function buildMenu(c, opts = {}) {
+  const settings = c.store ? c.store.state.settings : {}
   const run = (name, ...a) => () => {
     const fw = BrowserWindow.getFocusedWindow()
     const little = [...c.littles].find(l => l.win === fw)
     if (little && little.handleMenu(name, ...a)) return
-    if (c.windows.setup && fw === c.windows.setup) return
+    if (c.windows && c.windows.setup && fw === c.windows.setup) return
+    if (name === 'location') return (c.main || c.ensureMain()).commandBarFor('edit')
     c.actions.run(c.main || c.ensureMain(), name, ...a, {})
   }
-  const cmd = id => run('cmd:run', id)
-  const overlay = (mode, data) => run('overlay:open', mode, data || {})
-
-  const tabIndex = []
-  for (let i = 1; i <= 9; i++) {
-    tabIndex.push({ label: i === 9 ? 'Last Tab' : `Tab ${i}`, accelerator: `Ctrl+${i}`, click: run('tab:selectIndex', i) })
+  // A menu item for a shortcut id.
+  const S = (id, extra = {}) => {
+    const s = byId.get(id)
+    return { label: s.label[0].toUpperCase() + s.label.slice(1), accelerator: opts.noAccel ? undefined : accelFor(settings, id), click: run(...s.action), ...extra }
   }
-  const spaceIndex = []
-  for (let i = 1; i <= 9; i++) {
-    spaceIndex.push({ label: `Space ${i}`, accelerator: `Ctrl+Alt+${i}`, click: run('space:switchIndex', i) })
+  const range = prefix => [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => S(`${prefix}-${n}`))
+
+  let quitArmed = 0
+  const quit = () => {
+    // Arc-style safety: press ⌘Q twice to quit, so a stray ⌘Q never closes
+    // everything.
+    if (!settings.warnBeforeQuit || Date.now() - quitArmed < 1600) return app.quit()
+    quitArmed = Date.now()
+    if (c.main && !c.main.closed) c.main.toast('Press ⌘Q again to quit')
+    else app.quit()
   }
 
   const template = [
@@ -31,11 +39,11 @@ function buildMenu(c) {
       label: 'Crescent',
       submenu: [
         { role: 'about', label: 'About Crescent' },
-        { label: 'Check for Updates…', click: () => c.windows.checkUpdate(true) },
+        { label: 'Check for Updates…', click: () => c.updater.check(true) },
         { type: 'separator' },
-        { label: 'Settings…', accelerator: 'Cmd+,', click: () => c.windows.openSettings() },
+        S('settings', { label: 'Settings…' }),
         { label: 'Set as Default Browser', click: run('default:set') },
-        { label: 'Import from Another Browser…', click: () => c.windows.openSettings('import') },
+        { label: 'Import from Another Browser…', click: run('settings:open', 'import') },
         { type: 'separator' },
         { role: 'services' },
         { type: 'separator' },
@@ -43,24 +51,20 @@ function buildMenu(c) {
         { role: 'hideOthers' },
         { role: 'unhide' },
         { type: 'separator' },
-        { role: 'quit', label: 'Quit Crescent' },
+        { label: 'Quit Crescent', accelerator: 'Cmd+Q', click: quit },
       ],
     }] : []),
     {
       label: 'File',
       submenu: [
-        { label: 'New Tab', accelerator: 'CmdOrCtrl+T', click: run('overlay:open', 'command', { mode: 'new' }) },
-        { label: 'Open Location', accelerator: 'CmdOrCtrl+L', click: () => { const fw = BrowserWindow.getFocusedWindow(); const l = [...c.littles].find(x => x.win === fw); if (l) return l.focusUrl(); (c.main || c.ensureMain()).commandBarFor('edit') } },
-        { label: 'New Little Crescent Window', accelerator: 'CmdOrCtrl+Alt+N', click: () => c.windows.openLittle({}) },
-        { label: 'New Private Window', accelerator: 'CmdOrCtrl+Shift+N', click: () => c.windows.openLittle({ private: true }) },
+        S('new-tab', { label: 'New Tab' }), S('open-location', { label: 'Open Location' }), S('new-note', { label: 'New Note' }),
+        S('little', { label: 'New Little Crescent Window' }), S('private-window', { label: 'New Private Window' }),
         { label: 'New Window', accelerator: 'CmdOrCtrl+N', click: () => c.ensureMain().focus() },
         { type: 'separator' },
-        { label: 'Reopen Closed Tab', accelerator: 'CmdOrCtrl+Shift+T', click: run('tab:reopen') },
-        { label: 'Close Tab', accelerator: 'CmdOrCtrl+W', click: run('tab:close') },
+        S('reopen-tab', { label: 'Reopen Closed Tab' }), S('close-tab', { label: 'Close Tab' }),
         { label: 'Close Window', accelerator: 'CmdOrCtrl+Shift+W', click: () => { const fw = BrowserWindow.getFocusedWindow(); if (fw) fw.close() } },
         { type: 'separator' },
-        { label: 'Save Page As…', accelerator: 'CmdOrCtrl+Alt+S', click: run('tab:savePage') },
-        { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: run('tab:print') },
+        S('save-page', { label: 'Save Page As…' }), S('print', { label: 'Print…' }),
       ],
     },
     {
@@ -70,8 +74,8 @@ function buildMenu(c) {
         { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'pasteAndMatchStyle' },
         { role: 'delete' }, { role: 'selectAll' },
         { type: 'separator' },
-        { label: 'Copy URL', accelerator: 'CmdOrCtrl+Shift+C', click: run('tab:copyUrl') },
-        { label: 'Find…', accelerator: 'CmdOrCtrl+F', click: run('find:open') },
+        S('copy-url', { label: 'Copy URL' }), S('copy-markdown', { label: 'Copy Link as Markdown' }),
+        S('find', { label: 'Find…' }),
         { label: 'Find Next', accelerator: 'CmdOrCtrl+G', click: () => c.main && c.main.findState && c.main.find(c.main.findState.text, { forward: true }) },
         { label: 'Find Previous', accelerator: 'CmdOrCtrl+Shift+G', click: () => c.main && c.main.findState && c.main.find(c.main.findState.text, { forward: false }) },
         ...(IS_MAC ? [{ type: 'separator' }, { role: 'startSpeaking' }, { role: 'stopSpeaking' }] : []),
@@ -80,70 +84,53 @@ function buildMenu(c) {
     {
       label: 'View',
       submenu: [
-        { label: 'Toggle Sidebar', accelerator: 'CmdOrCtrl+S', click: run('sidebar:toggle') },
-        { label: 'Command Bar', accelerator: 'CmdOrCtrl+K', click: run('overlay:open', 'command', { mode: 'new' }) },
+        S('toggle-sidebar', { label: 'Toggle Sidebar' }), S('command-bar', { label: 'Command Bar' }),
+        S('focus', { label: 'Focus Mode…' }),
         { type: 'separator' },
-        { label: 'Reload', accelerator: 'CmdOrCtrl+R', click: run('tab:reload') },
-        { label: 'Hard Reload', accelerator: 'CmdOrCtrl+Shift+R', click: run('tab:reload', null, true) },
-        { label: 'Stop', accelerator: 'CmdOrCtrl+.', click: run('tab:stop') },
+        S('reload', { label: 'Reload' }), S('hard-reload', { label: 'Hard Reload' }), S('stop', { label: 'Stop' }),
         { type: 'separator' },
-        { label: 'Zoom In', accelerator: 'CmdOrCtrl+=', click: run('tab:zoom', 1) },
+        S('zoom-in', { label: 'Zoom In' }),
         { label: 'Zoom In ', accelerator: 'CmdOrCtrl+Plus', visible: false, click: run('tab:zoom', 1) },
-        { label: 'Zoom Out', accelerator: 'CmdOrCtrl+-', click: run('tab:zoom', -1) },
-        { label: 'Actual Size', accelerator: 'CmdOrCtrl+0', click: run('tab:zoom', 0) },
+        S('zoom-out', { label: 'Zoom Out' }), S('zoom-reset', { label: 'Actual Size' }),
         { type: 'separator' },
-        { label: 'Edit Theme…', accelerator: 'CmdOrCtrl+Shift+E', click: run('space:theme') },
-        { label: 'Library', accelerator: 'CmdOrCtrl+Y', click: overlay('library', { tab: 'archive' }) },
-        { label: 'Downloads', accelerator: 'CmdOrCtrl+Shift+J', click: overlay('library', { tab: 'downloads' }) },
+        S('theme', { label: 'Edit Space Colours…' }), S('library', { label: 'Library' }), S('downloads', { label: 'Downloads' }),
         { type: 'separator' },
         { role: 'togglefullscreen' },
-        { label: 'Developer Tools', accelerator: 'CmdOrCtrl+Alt+I', click: run('tab:devtools') },
-        { label: 'View Source', accelerator: 'CmdOrCtrl+Alt+U', click: run('tab:viewSource') },
+        S('devtools', { label: 'Developer Tools' }), S('view-source', { label: 'View Source' }),
       ],
     },
     {
       label: 'Tabs',
       submenu: [
-        { label: 'Pin / Unpin Tab', accelerator: 'CmdOrCtrl+D', click: run('tab:togglePin') },
-        { label: 'Add to Pinned Bar', accelerator: 'CmdOrCtrl+Shift+D', click: run('tab:favorite') },
-        { label: 'Split View', accelerator: 'Ctrl+Shift+=', click: run('split:toggle') },
-        { label: 'Duplicate Tab', accelerator: 'CmdOrCtrl+Shift+K', click: run('tab:duplicate') },
-        { label: 'Copy Screenshot of Page', accelerator: 'CmdOrCtrl+Shift+2', click: run('tab:screenshot') },
-        { label: 'Clear Unpinned Tabs', accelerator: 'CmdOrCtrl+Shift+Backspace', click: run('today:clear') },
+        S('pin-tab', { label: 'Pin / Unpin Tab' }), S('favorite-tab', { label: 'Add to Pinned Bar' }), S('split', { label: 'Split View' }),
+        S('duplicate-tab', { label: 'Duplicate Tab' }), S('snooze-tab', { label: 'Snooze Tab Until Tomorrow' }),
+        S('screenshot', { label: 'Copy Screenshot of Page' }), S('clear-today', { label: 'Clear Unpinned Tabs' }),
         { type: 'separator' },
-        { label: 'Next Tab', accelerator: 'Ctrl+Tab', click: run('tab:cycle', 1) },
-        { label: 'Previous Tab', accelerator: 'Ctrl+Shift+Tab', click: run('tab:cycle', -1) },
-        { label: 'Next Tab ', accelerator: 'CmdOrCtrl+Alt+Down', click: run('tab:cycle', 1) },
-        { label: 'Previous Tab ', accelerator: 'CmdOrCtrl+Alt+Up', click: run('tab:cycle', -1) },
+        S('next-tab', { label: 'Next Tab' }), S('prev-tab', { label: 'Previous Tab' }),
+        S('next-tab-2', { label: 'Next Tab ' }), S('prev-tab-2', { label: 'Previous Tab ' }),
         { type: 'separator' },
-        ...tabIndex,
+        ...range('tab'),
       ],
     },
     {
       label: 'Spaces',
       submenu: [
-        { label: 'Next Space', accelerator: 'CmdOrCtrl+Alt+Right', click: run('space:switch', 1) },
-        { label: 'Previous Space', accelerator: 'CmdOrCtrl+Alt+Left', click: run('space:switch', -1) },
-        { label: 'New Space', accelerator: 'CmdOrCtrl+Shift+S', click: run('space:create') },
+        S('next-space', { label: 'Next Space' }), S('prev-space', { label: 'Previous Space' }),
+        S('new-space', { label: 'New Space' }), S('private-space', { label: 'Private Space' }),
         { type: 'separator' },
-        ...spaceIndex,
+        ...range('space'),
       ],
     },
     {
       label: 'Go',
       submenu: [
-        { label: 'Back', accelerator: 'CmdOrCtrl+[', click: run('tab:back') },
-        { label: 'Forward', accelerator: 'CmdOrCtrl+]', click: run('tab:forward') },
-        { label: 'Bookmarks', accelerator: 'CmdOrCtrl+Alt+B', click: overlay('bookmarks') },
-        { label: 'Bookmark This Page', accelerator: 'CmdOrCtrl+Alt+D', click: run('bookmarks:addCurrent') },
-        { label: 'History', click: overlay('library', { tab: 'history' }) },
+        S('back', { label: 'Back' }), S('forward', { label: 'Forward' }),
+        S('bookmarks', { label: 'Bookmarks' }), S('bookmark-page', { label: 'Bookmark This Page' }),
+        { label: 'History', click: run('library:open', 'history') },
       ],
     },
     { role: 'windowMenu' },
-    {
-      role: 'help',
-      submenu: [{ label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+/', click: () => c.windows.openSettings('shortcuts') }],
-    },
+    { role: 'help', submenu: [{ label: 'Keyboard Shortcuts', accelerator: 'CmdOrCtrl+/', click: run('settings:open', 'shortcuts') }] },
   ]
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }

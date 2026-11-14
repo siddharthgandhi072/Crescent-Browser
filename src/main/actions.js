@@ -264,10 +264,12 @@ class Actions {
         st().settings[key] = value
         save()
         if (key === 'adblock') c.adblock.setEnabled(!!value)
-        if (key === 'sidebarHidden' || key === 'sidebarRight' || key === 'sidebarWidth') c.main && c.main.layout()
+        if (['sidebarHidden', 'sidebarRight', 'sidebarWidth', 'frameGap', 'pageRadius'].includes(key) && c.main) c.main.applyAppearance()
+        if (key === 'warnBeforeQuit') require('./menu').buildMenu(c)
+        if (key === 'globalPrivacyControl') require('./compat').setGpc(!!value)
         return true
       },
-      'settings:open': ({}, section) => c.windows.openSettings(section),
+      'settings:open': ({ main }, section) => { const m = main(); m.focus(); m.openOverlay('settings', { section: section || 'general' }) },
       'settings:chooseDownloadDir': async () => {
         const r = await dialog.showOpenDialog({ properties: ['openDirectory', 'createDirectory'] })
         if (!r.canceled && r.filePaths[0]) { st().settings.downloadDir = r.filePaths[0]; save(); return r.filePaths[0] }
@@ -275,7 +277,9 @@ class Actions {
       },
       'app:info': () => ({ version: app.getVersion(), electron: process.versions.electron, chrome: process.versions.chrome, platform: process.platform, arch: process.arch }),
       'app:openExternal': ({}, url) => { if (/^(https?|x-apple\.systempreferences):/.test(url)) shell.openExternal(url) },
-      'app:checkUpdate': () => c.windows.checkUpdate(),
+      'app:checkUpdate': () => c.updater.check(true),
+      'update:status': () => c.updater.status,
+      'update:install': () => c.updater.install(),
 
       // ----- default browser -----
       'default:is': () => app.isDefaultProtocolClient('https') && app.isDefaultProtocolClient('http'),
@@ -323,22 +327,117 @@ class Actions {
       'little:new': ({}, opts = {}) => c.windows.openLittle(opts),
 
       'theme:dark': () => nativeTheme.shouldUseDarkColors,
+
+      // ----- library (in the sidebar) -----
+      'library:open': ({ main }, tab) => main().openLibrary(tab || 'archive'),
+      'library:close': ({ main }) => main().wc.send('library', null),
+
+      // ----- focus -----
+      'focus:open': ({ main }) => { const m = main(); if (st().focus) return m.openOverlay('focusbar', { focus: st().focus }); m.openOverlay('focus', {}) },
+      'focus:start': ({ main }, opts) => main().startFocus(opts || {}),
+      'focus:stop': ({ main }) => main().endFocus(false),
+      'focus:status': () => st().focus,
+
+      // ----- private -----
+      'space:private': ({ main }) => main().openPrivateSpace(),
+      'space:endPrivate': ({ main }) => main().endPrivateSpace(),
+
+      // ----- snooze -----
+      'tab:snooze': ({ main }, when, id) => main().snooze(id || undefined, when || 'tomorrow'),
+      'snoozed:list': () => st().snoozed.slice().sort((a, b) => a.until - b.until),
+      'snoozed:wake': ({ main }, zid) => { const z = st().snoozed.find(x => x.id === zid); if (z) { z.until = 0; main().wakeSnoozed() } },
+      'snoozed:remove': ({}, zid) => { st().snoozed = st().snoozed.filter(x => x.id !== zid); save() },
+
+      // ----- notes -----
+      'note:new': ({ main }, opts) => main().newNote(opts || {}),
+      'note:update': ({}, id, patch) => {
+        const loc = M.locate(st(), id)
+        if (!loc || loc.item.type !== 'note') return false
+        const titleChanged = typeof patch.title === 'string' && patch.title !== loc.item.title
+        M.updateNote(st(), id, patch || {})
+        c.store.save()
+        if (titleChanged) c.broadcastState()
+        return true
+      },
+      'note:get': ({}, id) => { const loc = M.locate(st(), id); return loc && loc.item.type === 'note' ? loc.item : null },
+
+      // ----- split extras -----
+      'split:drop': ({ main }, dragged, target) => main().splitDrop(dragged, target),
+      'split:orientation': ({ main }, o) => main().splitOrientation(o),
+      'split:swap': ({ main }) => main().splitSwap(),
+
+      // ----- media / previews -----
+      'media:toggle': ({ main }, id) => main().mediaToggle(id),
+      'media:skip': ({ main }, id, dir) => main().mediaSkip(id, dir),
+      'tab:preview': ({ main }, id) => main().preview(id),
+      'tab:copyMarkdown': ({ main }) => {
+        const m = main(); const t = m.activeTab()
+        if (!t || !/^https?:/.test(t.info.url)) return
+        clipboard.writeText(`[${(t.info.title || t.info.url).replace(/[[\]]/g, '')}](${t.info.url})`)
+        m.toast('Copied as Markdown link')
+      },
+
+      // ----- shortcuts -----
+      // While recording a new shortcut, menu shortcuts are switched off so the keys reach the recorder.
+      'shortcuts:recording': ({}, on) => require('./menu').buildMenu(c, { noAccel: !!on }),
+      'shortcuts:list': () => require('./shortcuts').list(st().settings),
+      'shortcuts:set': ({}, id, accel) => {
+        const { byId } = require('./shortcuts')
+        if (!byId.has(id)) return { error: 'Unknown shortcut' }
+        const map = { ...st().settings.shortcuts }
+        if (accel === null) delete map[id]
+        else {
+          accel = String(accel)
+          // Free up the keys if another command used them.
+          const { list } = require('./shortcuts')
+          const clash = list(st().settings).find(x => x.id !== id && x.accel && x.accel.toLowerCase() === accel.toLowerCase())
+          if (clash) map[clash.id] = ''
+          map[id] = accel
+        }
+        st().settings.shortcuts = map
+        save()
+        require('./menu').buildMenu(c)
+        return true
+      },
+
+      // ----- air traffic control -----
+      'atc:set': ({}, rules) => {
+        if (!Array.isArray(rules)) return false
+        st().settings.airTraffic = rules.slice(0, 50).map(r => ({ id: r.id || M.uid('r'), url: String(r.url || '').trim().slice(0, 200), app: String(r.app || '').trim().slice(0, 80), spaceId: r.spaceId || null })).filter(r => r.url || r.app)
+        save()
+        return true
+      },
+
+      // ----- appearance -----
+      'appearance:apply': ({ main }) => { const m = main(); m.applyAppearance && m.applyAppearance() },
     }
   }
 
   // Commands from the command bar ("> ..." or typed names).
   command(m, id, arg) {
     const run = (name, ...a) => this.run(m, name, ...a, {})
-    m.closeOverlay({ refocus: id !== 'theme' && id !== 'library' })
+    m.closeOverlay({ refocus: !['theme', 'library', 'settings', 'focus', 'shortcuts', 'import', 'extensions'].includes(id) })
     switch (id) {
       case 'new-space': return run('space:create')
       case 'toggle-sidebar': return m.toggleSidebar()
       case 'copy-url': return m.copyUrl()
-      case 'settings': return this.c.windows.openSettings()
+      case 'settings': return setTimeout(() => m.openOverlay('settings', { section: 'general' }), 10)
       case 'clear-today': return run('today:clear')
-      case 'library': return setTimeout(() => m.openOverlay('library', { tab: 'archive' }), 10)
-      case 'downloads': return setTimeout(() => m.openOverlay('library', { tab: 'downloads' }), 10)
-      case 'history': return setTimeout(() => m.openOverlay('library', { tab: 'history' }), 10)
+      case 'library': return m.openLibrary('archive')
+      case 'downloads': return m.openLibrary('downloads')
+      case 'history': return m.openLibrary('history')
+      case 'snoozed': return m.openLibrary('snoozed')
+      case 'focus': return setTimeout(() => this.run(m, 'focus:open', {}), 10)
+      case 'private-space': return m.openPrivateSpace()
+      case 'end-private': return m.endPrivateSpace()
+      case 'note': return m.newNote()
+      case 'snooze': return m.snooze(undefined, 'tomorrow')
+      case 'copy-markdown': return run('tab:copyMarkdown')
+      case 'split-row': return m.splitOrientation('row')
+      case 'split-column': return m.splitOrientation('column')
+      case 'split-swap': return m.splitSwap()
+      case 'shortcuts': return setTimeout(() => m.openOverlay('settings', { section: 'shortcuts' }), 10)
+      case 'update': return this.c.updater.check(true)
       case 'theme': return setTimeout(() => m.openOverlay('theme', { spaceId: m.space.id }), 10)
       case 'pin': return run('tab:togglePin')
       case 'favorite': return run('tab:favorite')
@@ -358,8 +457,8 @@ class Actions {
       case 'unsplit': return m.unsplit()
       case 'little': return this.c.windows.openLittle({})
       case 'private': return this.c.windows.openLittle({ private: true })
-      case 'import': return this.c.windows.openSettings('import')
-      case 'extensions': return this.c.windows.openSettings('extensions')
+      case 'import': return setTimeout(() => m.openOverlay('settings', { section: 'import' }), 10)
+      case 'extensions': return setTimeout(() => m.openOverlay('settings', { section: 'extensions' }), 10)
       case 'webstore': return run('ext:store')
       case 'pins-global': return run('pins:mode', 'global')
       case 'pins-space': return run('pins:mode', 'space')

@@ -31,6 +31,7 @@ function resolveInput(input, engine = 'google') {
 }
 
 function searchUrl(q, engine = 'google') {
+  if (typeof engine === 'string' && /^https?:\/\/.*%s/.test(engine)) return engine.replace('%s', encodeURIComponent(q))
   const e = ENGINES[engine] || ENGINES.google
   return e.search.replace('%s', encodeURIComponent(q))
 }

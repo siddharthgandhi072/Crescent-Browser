@@ -22,7 +22,10 @@ class Permissions {
     this.c = c
     this.file = new JsonFile(path.join(dir, 'permissions.json'), {})
     this.pending = new Map()
-    const s = c.browseSession
+    this.attach(c.browseSession)
+  }
+
+  attach(s) {
     s.setPermissionRequestHandler((wc, permission, cb, details) => this.request(wc, permission, cb, details))
     s.setPermissionCheckHandler((wc, permission, origin) => this.check(permission, origin))
   }

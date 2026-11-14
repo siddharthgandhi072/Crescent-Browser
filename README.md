@@ -13,6 +13,8 @@
 
 If macOS says it can't check Crescent for malware, go to **System Settings → Privacy & Security** and click **Open Anyway**. You only need to do this once. Builds signed with a Developer ID (see [Signing](#signing-and-notarizing)) skip this step.
 
+**Updates install themselves.** When a new version is out, **Restart to update** appears at the bottom of the sidebar. One click and Crescent relaunches on the new version, with your tabs, spaces and logins untouched.
+
 The first launch walks you through importing from another browser, creating your spaces, choosing how pins work, and setting Crescent as your default browser.
 
 ## What's in it
@@ -39,7 +41,45 @@ The first launch walks you through importing from another browser, creating your
 - **Peek.** Shift-click a link, or follow a link out of a pinned tab, to preview it without leaving the page.
 - **Little Crescent.** Links from other apps open in a small window. One click moves the page into your main window.
 
-**Library (⌘Y)** holds every closed tab (nothing is auto-archived), your history and your downloads.
+**Library (⌘Y)** opens inside the sidebar, like Arc. It holds every closed tab (nothing is auto-archived), your history, your downloads and your snoozed tabs.
+
+**New in 0.2**
+- **Focus mode** (the target button, or ⇧⌘F):
+  - Pick a length, the sites you're allowed and words like "math".
+  - Crescent goes full screen. Searching still works, but anything else is blocked unless it's on your sites or the link contains one of your words.
+  - The timer sits in the top right. Ending early means holding **Stop** for 5 seconds.
+  - Sessions survive restarts.
+- **Split view, upgraded:**
+  - Drag a tab onto another tab to split them, up to four panes.
+  - Right-click a split for Side by Side or Top and Bottom, Swap, Equal Sizes or Separate. Drag the divider to resize.
+- **Private browsing, two ways:** a private window (⇧⌘N), or a private space (⇧⌘P) that you swipe to like any other space. Both use an in-memory session with no history or archive. A private space is wiped when you press **End** or quit.
+- **Air Traffic Control:** rules like "links from Slack go to Work" or "figma.com goes to Design" (Settings → Air Traffic Control).
+- **Full colour control per space:**
+  - Up to three colours, picked on the colour field or typed as hex, each with its own tone.
+  - Linear, radial or mesh gradients, with angle, intensity and grain.
+  - Light, auto or dark mode.
+- **Notes in the sidebar** (⌥⌘K): quick notes that sit next to your tabs. Lines starting `- [ ]` become checkboxes.
+- **Media player:** music or video in another tab gets play/pause controls at the bottom of the sidebar. Videos float into picture-in-picture when you switch away.
+- **Hover previews:** rest on a tab to see the page.
+- **Snooze:** right-click a tab → Snooze, and it comes back later today, tomorrow, at the weekend or next week.
+- **Calculator and conversions** in the command bar: type `2^10`, `10 km in miles` or `212 f to c`.
+- **Small things:**
+  - Duplicate-tab guard: typing a URL that's already open takes you to that tab.
+  - Unread dots on background tabs.
+  - Copy link as Markdown (⌥⌘C).
+  - Press ⌘Q twice to quit.
+  - Global Privacy Control.
+  - A custom search engine.
+- **Customize everything:**
+  - Every keyboard shortcut can be remapped (Settings → Shortcuts).
+  - Interface font and sidebar density.
+  - Glass amount, page corners and spacing.
+  - Number of columns in the pinned bar, and whether close buttons always show.
+  - Animations on or off.
+- **Easier editing:**
+  - Click a space's name to rename it, or its icon to pick a new one (or type an emoji).
+  - Drag a tab onto a space icon to move it there.
+- **Settings** opens as a sheet inside the window (⌘,).
 
 **Bookmarks** are one click away in the top bar (**⌥⌘B**).
 
@@ -88,9 +128,16 @@ The first launch walks you through importing from another browser, creating your
 | New space | ⇧⌘S |
 | Little Crescent / private window | ⌥⌘N / ⇧⌘N |
 | Clear unpinned tabs | ⇧⌘⌫ |
+| Focus mode | ⇧⌘F |
+| New note | ⌥⌘K |
+| Private space | ⇧⌘P |
+| Snooze tab | ⌥⌘Z |
+
+Every shortcut can be changed in **Settings → Shortcuts**.
 
 ## Known limits
 
+- **Google sign-in:** Crescent signs in to Google by presenting itself as Firefox on Google's login page only. Other Chromium browsers like Min do the same. Everywhere else it reports itself as Chrome.
 - **Netflix, Disney+ and other DRM video don't play yet.** They need Widevine, which plain Electron doesn't ship. The fix is to switch to castLabs' Electron build plus their free signing service; that's planned. YouTube, Twitch and other normal video work.
 - **Touch ID passkeys** on websites aren't supported yet. Passwords and security keys work.
 - **Extensions** that use rare Chrome APIs may only partly work. Most popular ones (ad blockers, dark mode, password managers, Better Canvas-style page tweaks) should work.
@@ -122,6 +169,6 @@ To ship a build that opens with no warning, add these repository secrets. They c
 | `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password from appleid.apple.com |
 | `APPLE_TEAM_ID` | Your 10-character Team ID |
 
-To publish a release your friends can download:
-1. Go to **Actions → Build → Run workflow** and tick **Publish a GitHub Release**.
-2. Or push a tag such as `v0.1.0`.
+Publishing a release:
+- **Bumping `version` in `package.json` and pushing** publishes a release automatically. Every installed copy then offers **Restart to update**.
+- You can also run **Actions → Build → Run workflow** with **Publish a GitHub Release** ticked, or push a tag such as `v0.2.0`.

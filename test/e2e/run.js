@@ -40,6 +40,17 @@ let PORT = 0
 async function main() {
   fs.mkdirSync(SHOTS, { recursive: true })
   const server = http.createServer((req, res) => {
+    if (req.url.startsWith('/media')) {
+      // 2 seconds of a quiet 440 Hz tone as a WAV, looping.
+      const rate = 8000, n = rate * 2, buf = Buffer.alloc(44 + n * 2)
+      buf.write('RIFF', 0); buf.writeUInt32LE(36 + n * 2, 4); buf.write('WAVEfmt ', 8); buf.writeUInt32LE(16, 16); buf.writeUInt16LE(1, 20); buf.writeUInt16LE(1, 22)
+      buf.writeUInt32LE(rate, 24); buf.writeUInt32LE(rate * 2, 28); buf.writeUInt16LE(2, 32); buf.writeUInt16LE(16, 34); buf.write('data', 36); buf.writeUInt32LE(n * 2, 40)
+      for (let i = 0; i < n; i++) buf.writeInt16LE(Math.round(Math.sin(i / rate * 2 * Math.PI * 440) * 3000), 44 + i * 2)
+      if (req.url.startsWith('/media.wav')) { res.writeHead(200, { 'Content-Type': 'audio/wav' }); return res.end(buf) }
+      res.writeHead(200, { 'Content-Type': 'text/html' })
+      return res.end('<title>Lo-fi radio</title><audio id=a loop src="/media.wav"></audio>')
+    }
+    if (req.url.startsWith('/headers')) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify(req.headers)) }
     const key = req.url.replace(/^\//, '').split(/[?#]/)[0] || 'a'
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
     res.end(page(key))
@@ -62,6 +73,12 @@ async function main() {
     win.on('response', r => { if (r.status() >= 400) console.log('[sidebar 404]', r.url()) })
     win.on('pageerror', e => console.log('[sidebar pageerror]', e.message))
     await waitFor(app, () => !!(global.__crescent && global.__crescent.main && global.__crescent.main.win))
+    await app.evaluate(() => {
+      global.__uiErrors = []
+      const wc = global.__crescent.main.overlay.webContents
+      wc.on('console-message', e => { if (e.level === 'error' || e.level === 3) global.__uiErrors.push(String(e.message)) })
+      wc.on('preload-error', (_e, p, err) => global.__uiErrors.push(String(err)))
+    })
     await sleep(800)
     return app
   }
@@ -167,10 +184,10 @@ async function main() {
   ok('closing a split side unwraps it')
 
   // Library + theme picker
-  await act(app, 'overlay:open', 'library', { tab: 'archive' })
+  await act(app, 'library:open', 'archive')
   await sleep(500)
   await shot('04-library')
-  await act(app, 'overlay:close')
+  await act(app, 'library:close')
   await act(app, 'space:theme')
   await sleep(500)
   await shot('05-theme')
@@ -271,6 +288,154 @@ async function main() {
   assert.equal(s.space.today[0].url, U('d'))
   ok('Little Crescent → main window keeps the page')
 
+  // ---------------- v0.2 features ----------------
+  // Site compatibility: Chrome brand in client hints + navigator, GPC header
+  {
+    const tid = await act(app, 'tab:new', U('headers')).then(() => app.evaluate(() => global.__crescent.main.space.activeId))
+    await waitFor(app, (_e, id) => { const t = global.__crescent.main.tabs.get(id); return t && !t.info.loading && t.info.url.includes('headers') }, tid)
+    const info = await app.evaluate(async (_e, id) => {
+      const t = global.__crescent.main.tabs.get(id)
+      const body = await t.wc.executeJavaScript('document.body.innerText')
+      const brands = await t.wc.executeJavaScript('navigator.userAgentData ? navigator.userAgentData.brands.map(b => b.brand) : []')
+      return { headers: JSON.parse(body), brands, ua: await t.wc.executeJavaScript('navigator.userAgent') }
+    }, tid)
+    assert.ok(!/Electron/.test(info.ua), 'no Electron in UA')
+    assert.equal(info.headers['sec-gpc'], '1')
+    assert.ok(info.brands.includes('Google Chrome'), 'Google Chrome brand exposed: ' + info.brands.join(','))
+    ok('looks like Chrome to sites (UA, client hints), sends Global Privacy Control')
+    await act(app, 'tab:close', tid)
+  }
+
+  // Notes
+  const noteId = await act(app, 'note:new')
+  await act(app, 'note:update', noteId, { title: 'Chem plan', body: '- [ ] read ch 4\n- [x] lab report' })
+  s = await snap(app)
+  assert.equal(s.space.activeId, noteId)
+  assert.equal(s.display.length, 0, 'note shows in the page area, no web view')
+  await sleep(400)
+  await shot('17-note')
+  ok('notes in the sidebar')
+
+  // Drag a tab onto another tab -> split; orientation + swap
+  await act(app, 'tab:new', U('a'))
+  await act(app, 'tab:new', U('b'))
+  s = await snap(app)
+  const [t1, t2] = s.space.today.filter(i => i.type === 'tab').map(t => t.id)
+  assert.ok(await act(app, 'split:drop', t2, t1))
+  s = await snap(app)
+  assert.equal(s.display.length, 2)
+  await act(app, 'split:orientation', 'column')
+  await act(app, 'split:swap')
+  s = await snap(app)
+  const splitItem = s.space.today.find(i => i.type === 'split')
+  assert.equal(splitItem.orientation, 'column')
+  assert.equal(splitItem.children[0].id, t2)
+  const rects = await app.evaluate(() => global.__crescent.main.displayRects())
+  assert.ok(rects[0].y < rects[1].y && rects[0].x === rects[1].x, 'stacked top/bottom')
+  await sleep(500)
+  await shot('18-split-vertical')
+  ok('drag onto a tab splits; vertical split; swap')
+  await act(app, 'tab:close', t1); await act(app, 'tab:close', t2)
+
+  // Focus mode: searches + allowed sites/words pass, everything else blocked
+  await act(app, 'focus:start', { minutes: 1, sites: ['127.0.0.1'], words: ['chem'], fullscreen: false })
+  const allow = await app.evaluate((_e, port) => {
+    const m = global.__crescent.main
+    return {
+      search: m.focusAllows('https://www.google.com/search?q=anything'),
+      site: m.focusAllows(`http://127.0.0.1:${port}/a`),
+      word: m.focusAllows('https://example.com/chemistry-notes'),
+      other: m.focusAllows('https://youtube.com/watch?v=x'),
+    }
+  }, PORT)
+  assert.deepEqual(allow, { search: true, site: true, word: true, other: false })
+  const blockedTab = await act(app, 'tab:new', 'https://youtube.com/')
+  await sleep(800)
+  const blockedUrl = await app.evaluate(() => global.__crescent.main.activeTab().wc.getURL())
+  assert.ok(blockedUrl.startsWith('crescent://app/pages/blocked'), 'blocked page shown: ' + blockedUrl)
+  await shot('19-focus')
+  s = await snap(app)
+  assert.equal(s.overlay, 'focusbar')
+  await act(app, 'focus:stop')
+  s = await snap(app)
+  assert.equal(s.state.focus, null)
+  ok('focus mode blocks off-list sites, allows search/sites/words, timer bar shows')
+
+  // Private space
+  await act(app, 'space:private')
+  s = await snap(app)
+  assert.ok(s.space.private)
+  await act(app, 'tab:new', U('c'))
+  await sleep(500)
+  const privSession = await app.evaluate(() => { const m = global.__crescent.main; const t = m.activeTab(); return t.wc.session === global.__crescent.privateSession() && t.private })
+  assert.ok(privSession, 'private tab uses the in-memory session')
+  await shot('20-private')
+  await act(app, 'space:endPrivate')
+  s = await snap(app)
+  assert.ok(!s.state.spaces.some(x => x.private))
+  ok('private space: separate session, wiped on End')
+
+  // Snooze
+  await act(app, 'tab:new', U('d'))
+  const snoozeId = (await snap(app)).space.activeId
+  await act(app, 'tab:snooze', 'later', snoozeId)
+  s = await snap(app)
+  assert.equal(s.state.snoozed.length, 1)
+  const zid = s.state.snoozed[0].id
+  await act(app, 'snoozed:wake', zid)
+  s = await snap(app)
+  assert.equal(s.state.snoozed.length, 0)
+  assert.equal(s.space.today[0].url, U('d'))
+  ok('snooze a tab and bring it back')
+
+  // Custom shortcuts
+  await act(app, 'shortcuts:set', 'toggle-sidebar', 'CmdOrCtrl+Shift+L')
+  const sc = await act(app, 'shortcuts:list')
+  assert.equal(sc.find(x => x.id === 'toggle-sidebar').accel, 'CmdOrCtrl+Shift+L')
+  const menuAccel = await app.evaluate(({ Menu }) => { let found = null; const walk = items => items.forEach(i => { if (i.label === 'Toggle Sidebar') found = i.accelerator; if (i.submenu) walk(i.submenu.items) }); walk(Menu.getApplicationMenu().items); return found })
+  assert.equal(menuAccel, 'CmdOrCtrl+Shift+L')
+  await act(app, 'shortcuts:set', 'toggle-sidebar', null)
+  ok('custom shortcuts rebuild the menu')
+
+  // Air Traffic Control
+  const firstSpace = (await snap(app)).state.spaces[0].id
+  await act(app, 'atc:set', [{ url: '127.0.0.1:' + PORT + '/e', app: '', spaceId: firstSpace }])
+  await app.evaluate((_e, url) => global.__crescent.openExternalUrl(url), U('e'))
+  await sleep(600)
+  s = await snap(app)
+  assert.equal(s.state.activeSpaceId, firstSpace)
+  assert.equal(s.space.today[0].url, U('e'))
+  assert.equal(await app.evaluate(() => global.__crescent.littles.size), 0)
+  await act(app, 'atc:set', [])
+  ok('Air Traffic Control routes links to a space')
+
+  // Media controls: a tab playing in the background shows in the sidebar player
+  await act(app, 'tab:new', U('media'))
+  const mediaId = await app.evaluate(() => global.__crescent.main.space.activeId)
+  await waitFor(app, (_e, id) => { const t = global.__crescent.main.tabs.get(id); return t && !t.info.loading }, mediaId)
+  await act(app, 'media:toggle', mediaId)
+  await waitFor(app, (_e, id) => global.__crescent.main.tabs.get(id).info.playing === true, mediaId)
+  await act(app, 'tab:new', U('b'))
+  await sleep(600)
+  await shot('22-media')
+  await act(app, 'media:toggle', mediaId)
+  await waitFor(app, (_e, id) => global.__crescent.main.tabs.get(id).info.playing === false, mediaId)
+  ok('media controls play/pause a background tab')
+  await act(app, 'tab:close', mediaId)
+
+  // Settings sheet
+  await act(app, 'settings:open', 'appearance')
+  await sleep(600)
+  s = await snap(app)
+  assert.equal(s.overlay, 'settings')
+  await shot('21-settings')
+  await act(app, 'overlay:close')
+  ok('settings open as a sheet in the window')
+
+  const uiErrors = await app.evaluate(() => global.__uiErrors.filter(m => !/Failed to load resource|favicon/i.test(m)))
+  assert.deepEqual(uiErrors, [], 'overlay UI errors: ' + uiErrors.join(' | '))
+  ok('no errors in the overlay UI (command bar, settings, focus, theme)')
+
   // Persistence across restart
   const before = await snap(app)
   await app.evaluate(() => global.__crescent.store.flush())
@@ -307,10 +472,9 @@ async function main() {
   const st2 = await app2.evaluate(() => global.__crescent.store.state.spaces.map(s => s.name))
   assert.deepEqual(st2, ['Personal', 'School'])
   ok('setup flow creates spaces and opens the browser')
-  await app2.evaluate(() => { global.__crescent.main.closeOverlay(); global.__crescent.windows.openSettings('tabs') })
-  await sleep(1500)
-  await app2.evaluate(() => { const w = global.__crescent.windows.settings; w.setBounds({ x: 290, y: 130, width: 860, height: 640 }); w.moveTop(); w.focus() })
-  await sleep(500)
+  await sleep(900)
+  await app2.evaluate(() => { global.__crescent.main.closeOverlay(); global.__crescent.windows.openSettings('appearance') })
+  await sleep(900)
   await shot('16-settings')
   await app2.close()
 

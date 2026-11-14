@@ -1,6 +1,8 @@
 import { html, render, useState, useEffect, useRef, useMemo, useLayoutEffect, useCrescent, useEvent, invoke, displayUrl, hostOf, Favicon, cls, timeAgo, dayGroup, fmtBytes } from '../shared/ui.js'
 import { Icon, ICON_NAMES } from '../shared/icons.js'
-import { themeVars, applyVars, hexToRgb, rgbToHsl, hslToRgb, rgbToHex } from '../shared/theme.js'
+import { themeVars, applyVars, appearanceVars, hexToRgb, rgbToHsl, hslToRgb, rgbToHex } from '../shared/theme.js'
+import { calculate } from '../shared/calc.js'
+import { SettingsPanel } from '../settings/panel.js'
 
 const close = () => invoke('overlay:close')
 
@@ -17,12 +19,14 @@ function App() {
     if (!space) return
     const t = themeVars(space.theme, state.dark)
     applyVars(document.documentElement, t.vars)
+    applyVars(document.documentElement, appearanceVars(state.settings))
     document.documentElement.classList.toggle('dark', t.dark)
-  }, [space && JSON.stringify(space.theme), state && state.dark])
+    document.documentElement.classList.toggle('no-anim', state.settings.animations === false)
+  }, [space && JSON.stringify(space.theme), state && state.dark, state && state.settings.uiFont, state && state.settings.animations])
 
   useEffect(() => {
     const onKey = e => {
-      if (e.key !== 'Escape' || !ov) return
+      if (e.key !== 'Escape' || !ov || ov.mode === 'focusbar') return
       e.preventDefault()
       if (ov.mode === 'prompt') invoke('permission:respond', ov.data.id, false, false)
       else if (ov.mode === 'savepw') invoke('passwords:respond', ov.data.id, false)
@@ -36,10 +40,10 @@ function App() {
   const props = { data: ov.data || {}, layout: ov.layout, state, space, runtime: data.runtime, key: ov.key }
   const Mode = MODES[ov.mode]
   if (!Mode) return null
-  const modal = !['find', 'toast'].includes(ov.mode)
+  const modal = !['find', 'toast', 'focusbar'].includes(ov.mode)
   return html`
     <div class=${cls('ov', 'm-' + ov.mode)}>
-      ${modal && html`<div class=${cls('backdrop', (ov.mode === 'command' || ov.mode === 'peek') && 'dim')} onMouseDown=${() => {
+      ${modal && html`<div class=${cls('backdrop', ['command', 'peek', 'settings', 'focus'].includes(ov.mode) && 'dim')} onMouseDown=${() => {
         if (ov.mode === 'prompt') invoke('permission:respond', ov.data.id, false, false)
         else if (ov.mode === 'savepw') invoke('passwords:respond', ov.data.id, false)
         else close()
@@ -87,6 +91,18 @@ const COMMANDS = [
   { id: 'pins-global', label: 'Pinned Bar: Same in Every Space', icon: 'pin' },
   { id: 'pins-space', label: 'Pinned Bar: Different per Space', icon: 'pin' },
   { id: 'default-browser', label: 'Make Crescent the Default Browser', icon: 'moon' },
+  { id: 'focus', label: 'Start Focus Session', icon: 'target', keys: '⇧⌘F', words: 'focus block distraction timer study' },
+  { id: 'note', label: 'New Note', icon: 'pen', keys: '⌥⌘K', words: 'notes write' },
+  { id: 'private-space', label: 'Private Space', icon: 'incognito', keys: '⇧⌘P', words: 'incognito private' },
+  { id: 'end-private', label: 'End Private Session', icon: 'incognito', words: 'incognito private clear' },
+  { id: 'snooze', label: 'Snooze Tab Until Tomorrow', icon: 'clock', keys: '⌥⌘Z', words: 'later remind' },
+  { id: 'snoozed', label: 'Snoozed Tabs', icon: 'clock' },
+  { id: 'copy-markdown', label: 'Copy Link as Markdown', icon: 'link', keys: '⌥⌘C' },
+  { id: 'split-row', label: 'Split: Side by Side', icon: 'split' },
+  { id: 'split-column', label: 'Split: Top and Bottom', icon: 'rows' },
+  { id: 'split-swap', label: 'Split: Swap Tabs', icon: 'split' },
+  { id: 'shortcuts', label: 'Customize Shortcuts', icon: 'bolt', words: 'keyboard keys' },
+  { id: 'update', label: 'Check for Updates', icon: 'down' },
 ]
 
 function Command({ data, state, runtime }) {
@@ -129,6 +145,8 @@ function Command({ data, state, runtime }) {
       for (const c of COMMANDS.slice(0, 4)) push('Try', { kind: 'cmd', ...c })
       return out
     }
+    const calc = calculate(q)
+    if (calc) push('Result', { kind: 'calc', label: `= ${calc.value}`, value: calc.value })
     if (complete) push('Go', { kind: 'go', url: 'https://' + complete.replace(/^https?:\/\//, ''), label: complete })
     else if (local.resolved) push('Go', { kind: 'go', url: local.resolved, label: displayUrl(local.resolved) || local.resolved })
     else push('Search', { kind: 'search', q, label: q })
@@ -153,6 +171,7 @@ function Command({ data, state, runtime }) {
   const go = (row, mods = {}) => {
     if (!row) return
     if (row.kind === 'cmd') return invoke('cmd:run', row.id, row.arg)
+    if (row.kind === 'calc') { navigator.clipboard.writeText(row.value).catch(() => {}); return close() }
     if (row.kind === 'tab' && !mods.split && mode !== 'split') { close(); return invoke('tab:select', row.id) }
     if (row.kind === 'tab' && (mods.split || mode === 'split')) { close(); return invoke('split:with', row.id) }
     const url = row.kind === 'search' ? row.q : row.url
@@ -209,9 +228,11 @@ function Command({ data, state, runtime }) {
 function Row({ r, sel, onHover, onClick, mode }) {
   const right = r.kind === 'tab' ? html`<span class="k">${mode === 'split' ? 'Split with tab' : 'Switch to tab'} <kbd>↵</kbd></span>`
     : r.keys ? html`<span class="k">${r.keys.split('').filter(c => c.trim()).map(c => html`<kbd>${c}</kbd>`)}</span>`
+    : r.kind === 'calc' ? html`<span class="k">Copy <kbd>↵</kbd></span>`
     : sel && (r.kind === 'search' || r.kind === 'go') ? html`<span class="k"><kbd>↵</kbd></span>` : null
   let icon
-  if (r.kind === 'search') icon = html`<${Icon} name="search" />`
+  if (r.kind === 'calc') icon = html`<${Icon} name="bolt" />`
+  else if (r.kind === 'search') icon = html`<${Icon} name="search" />`
   else if (r.kind === 'go') icon = html`<${Favicon} url=${r.url} size=${16} />`
   else if (r.kind === 'cmd') icon = html`<${Icon} name=${r.icon || 'dots'} />`
   else if (r.kind === 'history') icon = html`<${Icon} name="clock" />`
@@ -284,88 +305,24 @@ function Bookmarks({ state, layout }) {
 
 function countLeaves(n) { let c = 0; for (const x of n.children) c += x.type === 'folder' ? countLeaves(x) : 1; return c }
 
-// ================================================================ library
-
-function Library({ data, layout, state }) {
-  const [tab, setTab] = useState(data.tab || 'archive')
-  const [q, setQ] = useState('')
-  const [items, setItems] = useState([])
-  const input = useRef(null)
-  const load = () => {
-    if (tab === 'archive') invoke('archive:list', q).then(setItems)
-    else if (tab === 'history') invoke('history:list', q).then(setItems)
-    else invoke('downloads:list').then(l => setItems(q ? l.filter(d => d.filename.toLowerCase().includes(q.toLowerCase())) : l))
-  }
-  useEffect(() => { load() }, [tab, q, state.archiveCount])
-  useEvent('downloads', () => { if (tab === 'downloads') load() }, [tab, q])
-  useLayoutEffect(() => input.current && input.current.focus(), [tab])
-  const spaceName = id => (state.spaces.find(s => s.id === id) || {}).name || ''
-  const left = layout ? layout.content.x : 262
-  const groups = []
-  for (const it of items) {
-    const g = dayGroup(it.closedAt || it.last || it.startedAt || 0)
-    if (!groups.length || groups[groups.length - 1].g !== g) groups.push({ g, items: [] })
-    groups[groups.length - 1].items.push(it)
-  }
-  return html`
-    <div class="panel lib" style=${`left:${left}px;top:8px;bottom:8px`} onMouseDown=${e => e.stopPropagation()}>
-      <div class="lib-h"><${Icon} name="archive" size=${18} /> Library</div>
-      <div class="seg">
-        ${['archive', 'history', 'downloads'].map(t => html`<button class=${cls(tab === t && 'on')} onClick=${() => { setTab(t); setQ('') }}>${t[0].toUpperCase() + t.slice(1)}</button>`)}
-      </div>
-      <div class="search"><${Icon} name="search" size=${14} /><input ref=${input} placeholder=${tab === 'archive' ? 'Search closed tabs' : tab === 'history' ? 'Search history' : 'Search downloads'} value=${q} onInput=${e => setQ(e.target.value)} /></div>
-      <div class="scroll">
-        ${!items.length && html`<div class="none">${q ? 'Nothing matches.' : tab === 'archive' ? 'Tabs you close show up here, so nothing is ever really gone.' : tab === 'history' ? 'No history yet.' : 'No downloads yet.'}</div>`}
-        ${groups.map(g => html`
-          <div class="grp">${g.g}</div>
-          ${g.items.map(it => tab === 'downloads' ? html`<${DownloadRow} d=${it} key=${it.id} />` : html`
-            <div class="r" key=${it.id || it.url} title=${it.url}
-              onClick=${() => tab === 'archive' ? invoke('archive:restore', it.id) : (close(), invoke('tab:new', it.url))}>
-              <${Favicon} url=${it.url} src=${it.favicon} size=${16} />
-              <span class="rt">${it.title || displayUrl(it.url)}</span>
-              <small class="when">${tab === 'archive' && it.spaceId ? spaceName(it.spaceId) : timeAgo(it.closedAt || it.last)}</small>
-              <span class="restore">${tab === 'archive' ? 'Restore' : 'Open'}</span>
-              <button class="x" title="Remove" onClick=${e => { e.stopPropagation(); (tab === 'archive' ? invoke('archive:remove', it.id) : invoke('history:remove', it.url)).then(load) }}><${Icon} name="x" size=${13} /></button>
-            </div>`)}
-        `)}
-      </div>
-      ${tab === 'archive' && items.length > 0 && html`<div class="pfoot"><button onClick=${() => invoke('archive:clear').then(load)}>Clear archive</button></div>`}
-      ${tab === 'downloads' && items.length > 0 && html`<div class="pfoot"><button onClick=${() => invoke('downloads:clear').then(load)}>Clear list</button><button onClick=${() => invoke('cmd:run', 'settings')}>Download settings</button></div>`}
-    </div>`
-}
-
-function DownloadRow({ d }) {
-  const pct = d.total ? Math.round((d.received / d.total) * 100) : null
-  const active = d.state === 'progressing'
-  return html`
-    <div class="r dl" onClick=${() => d.state === 'completed' && invoke('downloads:open', d.id)} title=${d.path}>
-      <${Icon} name=${active ? 'down' : d.state === 'completed' ? 'check' : 'x'} />
-      <div class="dl-main">
-        <span class="rt">${d.filename}</span>
-        <small>${active ? `${fmtBytes(d.received)} of ${d.total ? fmtBytes(d.total) : '?'}${d.paused ? ' · paused' : ''}` : d.state === 'completed' ? (d.exists === false ? 'Moved or deleted' : fmtBytes(d.total || d.received)) : d.state}</small>
-        ${active && html`<i class="prog"><b style=${`width:${pct ?? 30}%`}></b></i>`}
-      </div>
-      ${active ? html`
-        <button class="x vis" title=${d.paused ? 'Resume' : 'Pause'} onClick=${e => { e.stopPropagation(); invoke('downloads:pause', d.id) }}><${Icon} name=${d.paused ? 'fwd' : 'stop'} size=${13} /></button>
-        <button class="x vis" title="Cancel" onClick=${e => { e.stopPropagation(); invoke('downloads:cancel', d.id) }}><${Icon} name="x" size=${13} /></button>`
-        : d.state === 'completed' && d.exists !== false ? html`<button class="x" title="Show in Finder" onClick=${e => { e.stopPropagation(); invoke('downloads:reveal', d.id) }}><${Icon} name="search" size=${13} /></button>` : null}
-    </div>`
-}
-
 // ================================================================ theme picker (Arc-style)
 
 const PRESETS = [
   ['#d9c6ef', '#f3cfb4'], ['#bfe0d0', '#e8efc0'], ['#b9cdf3', '#d8c4f0'], ['#f3c0c0', '#f6e0b0'],
-  ['#c4e3f0', '#c7c4f3'], ['#efd3a8', '#e6b8a9'], ['#cfd4d9'], ['#2c2a33', '#4a3f5e'],
+  ['#c4e3f0', '#c7c4f3'], ['#efd3a8', '#e6b8a9'], ['#ff7a59', '#ffd166', '#7c5cff'], ['#0f766e', '#22d3ee'],
+  ['#cfd4d9'], ['#2c2a33', '#4a3f5e'],
 ]
 
+// Arc-style colour picker: drag dots on the colour field (up to three),
+// then shape the gradient (style, angle, intensity, grain) and light/dark.
 function Theme({ data, state, layout }) {
   const space = state.spaces.find(s => s.id === (data.spaceId || state.activeSpaceId))
-  const [theme, setTheme] = useState(() => space ? { ...space.theme, colors: [...space.theme.colors] } : null)
+  const [theme, setTheme] = useState(() => space ? { angle: 160, style: 'linear', intensity: 0.5, grain: 0.4, mode: 'auto', ...space.theme, colors: [...space.theme.colors] } : null)
+  const [sel, setSel] = useState(0)
   const field = useRef(null)
   const raf = useRef(0)
   if (!space || !theme) return null
-  const W = 288, H = 216, cx = W / 2, cy = H / 2, R = Math.hypot(cx, cy)
+  const W = 300, H = 200, cx = W / 2, cy = H / 2, R = Math.hypot(cx, cy)
   const commit = t => {
     setTheme(t)
     cancelAnimationFrame(raf.current)
@@ -377,16 +334,18 @@ function Theme({ data, state, layout }) {
     const a = (h - 90) * Math.PI / 180
     return [Math.max(10, Math.min(W - 10, cx + Math.cos(a) * r)), Math.max(10, Math.min(H - 10, cy + Math.sin(a) * r))]
   }
-  const fromPos = (x, y) => {
+  const fromPos = (x, y, keepL) => {
     const dx = x - cx, dy = y - cy
     const hue = (Math.atan2(dy, dx) * 180 / Math.PI + 90 + 360) % 360
     const sat = Math.min(1, Math.hypot(dx, dy) / (R * 0.92))
-    return rgbToHex(hslToRgb([hue, 0.12 + sat * 0.78, 0.72]))
+    return rgbToHex(hslToRgb([hue, 0.08 + sat * 0.88, keepL ?? 0.66]))
   }
   const local = e => { const r = field.current.getBoundingClientRect(); return [Math.max(0, Math.min(W, e.clientX - r.left)), Math.max(0, Math.min(H, e.clientY - r.top))] }
   const drag = (i, e) => {
     e.preventDefault(); e.stopPropagation()
-    const move = ev => { const [x, y] = local(ev); const colors = [...theme.colors]; colors[i] = fromPos(x, y); theme.colors = colors; commit({ ...theme, colors }) }
+    setSel(i)
+    const keepL = rgbToHsl(hexToRgb(theme.colors[i]))[2]
+    const move = ev => { const [x, y] = local(ev); const colors = [...theme.colors]; colors[i] = fromPos(x, y, Math.max(0.3, Math.min(0.85, keepL))); theme.colors = colors; commit({ ...theme, colors }) }
     const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up) }
     window.addEventListener('mousemove', move); window.addEventListener('mouseup', up)
   }
@@ -394,32 +353,55 @@ function Theme({ data, state, layout }) {
     if (theme.colors.length >= 3) return
     const [x, y] = local(e)
     commit({ ...theme, colors: [...theme.colors, fromPos(x, y)] })
+    setSel(theme.colors.length)
   }
   const remove = (i, e) => {
-    e.stopPropagation()
+    e && e.stopPropagation()
     if (theme.colors.length <= 1) return
     commit({ ...theme, colors: theme.colors.filter((_, j) => j !== i) })
+    setSel(0)
   }
+  const setHex = v => {
+    const hex = v.trim().startsWith('#') ? v.trim() : '#' + v.trim()
+    if (!/^#[0-9a-f]{6}$/i.test(hex)) return
+    const colors = [...theme.colors]; colors[sel] = hex.toLowerCase(); commit({ ...theme, colors })
+  }
+  const setLight = l => {
+    const [h, s] = rgbToHsl(hexToRgb(theme.colors[sel]))
+    const colors = [...theme.colors]; colors[sel] = rgbToHex(hslToRgb([h, s, l])); commit({ ...theme, colors })
+  }
+  const preview = themeVars(theme, state.dark).vars['--frame']
   const left = (layout ? layout.content.x : 262) + 12
+  const cur = theme.colors[sel] || theme.colors[0]
   return html`
-    <div class="panel theme" style=${`left:${left}px;top:52px`} onMouseDown=${e => e.stopPropagation()}>
-      <div class="tt"><${Icon} name="palette" size=${16} /> ${space.name} <small>Space theme</small></div>
+    <div class="panel theme" style=${`left:${left}px;top:44px`} onMouseDown=${e => e.stopPropagation()}>
+      <div class="tt"><${Icon} name="palette" size=${16} /> ${space.name}<button class="reset" onClick=${() => commit({ ...theme, colors: ['#d9c6ef', '#f3cfb4'], angle: 160, style: 'linear', intensity: 0.5, grain: 0.4, mode: 'auto' })}>Reset</button></div>
       <div class="cfield" ref=${field} style=${`width:${W}px;height:${H}px`} onMouseDown=${add}>
         <i class="dotgrid"></i>
         ${theme.colors.map((c, i) => {
           const [x, y] = toPos(c)
-          return html`<span class="knob" style=${`left:${x}px;top:${y}px;background:${c}`} onMouseDown=${e => drag(i, e)} onDblClick=${e => remove(i, e)} title="Drag to change, double-click to remove"></span>`
+          return html`<span class=${cls('knob', i === sel && 'sel')} style=${`left:${x}px;top:${y}px;background:${c}`} onMouseDown=${e => drag(i, e)} onDblClick=${e => remove(i, e)} title="Drag to change · double-click to remove"></span>`
         })}
       </div>
-      <p class="hint">${theme.colors.length < 3 ? 'Click to add a colour · ' : ''}double-click a dot to remove it</p>
+      <div class="colrow">
+        ${theme.colors.map((c, i) => html`<button class=${cls('chip', i === sel && 'on')} style=${`background:${c}`} onClick=${() => setSel(i)}></button>`)}
+        ${theme.colors.length < 3 && html`<button class="chip add" title="Add a colour" onClick=${() => { commit({ ...theme, colors: [...theme.colors, '#f2c4a8'] }); setSel(theme.colors.length) }}><${Icon} name="plus" size=${12} /></button>`}
+        <input class="hex" value=${cur} key=${cur} onChange=${e => setHex(e.target.value)} spellcheck=${false} />
+        ${theme.colors.length > 1 && html`<button class="mini-x" title="Remove this colour" onClick=${() => remove(sel)}><${Icon} name="trash" size=${13} /></button>`}
+      </div>
+      <label class="slider">Tone<input type="range" min="0.2" max="0.9" step="0.01" value=${rgbToHsl(hexToRgb(cur))[2]} onInput=${e => setLight(Number(e.target.value))} /></label>
+      <div class="gprev" style=${`background:${preview}`}></div>
+      <div class="seg3">
+        ${[['linear', 'Linear'], ['radial', 'Radial'], ['mesh', 'Mesh']].map(([v, l]) => html`<button class=${cls(theme.style === v && 'on')} onClick=${() => commit({ ...theme, style: v })}>${l}</button>`)}
+      </div>
+      <label class="slider">Angle<input type="range" min="0" max="360" step="1" value=${theme.angle} onInput=${e => commit({ ...theme, angle: Number(e.target.value) })} /><span>${theme.angle}°</span></label>
+      <label class="slider">Intensity<input type="range" min="0" max="1" step="0.01" value=${theme.intensity} onInput=${e => commit({ ...theme, intensity: Number(e.target.value) })} /></label>
+      <label class="slider">Grain<input type="range" min="0" max="1" step="0.01" value=${theme.grain} onInput=${e => commit({ ...theme, grain: Number(e.target.value) })} /></label>
       <div class="seg3">
         ${['light', 'auto', 'dark'].map(m => html`<button class=${cls(theme.mode === m && 'on')} onClick=${() => commit({ ...theme, mode: m })}><${Icon} name=${m === 'light' ? 'sun' : m === 'dark' ? 'moon' : 'globe'} size=${13} /> ${m[0].toUpperCase() + m.slice(1)}</button>`)}
       </div>
-      <label class="slider">Grain
-        <input type="range" min="0" max="1" step="0.01" value=${theme.grain} onInput=${e => commit({ ...theme, grain: Number(e.target.value) })} />
-      </label>
       <div class="presets">
-        ${PRESETS.map(p => html`<button class=${cls('sw', p.join() === theme.colors.join() && 'on')} style=${`background:${p.length > 1 ? `linear-gradient(135deg,${p[0]},${p[1]})` : p[0]}`} onClick=${() => commit({ ...theme, colors: [...p], mode: p[0] === '#2c2a33' ? 'dark' : theme.mode === 'dark' ? 'auto' : theme.mode })}></button>`)}
+        ${PRESETS.map(p => html`<button class=${cls('sw', p.join() === theme.colors.join() && 'on')} style=${`background:${p.length > 1 ? `linear-gradient(135deg,${p.join(',')})` : p[0]}`} onClick=${() => commit({ ...theme, colors: [...p], mode: p[0] === '#2c2a33' ? 'dark' : theme.mode === 'dark' ? 'auto' : theme.mode })}></button>`)}
       </div>
     </div>`
 }
@@ -435,6 +417,74 @@ function Icons({ data, state, layout }) {
       <div class="tt"><${Icon} name=${space.icon} size=${16} /> Icon for ${space.name}</div>
       <div class="igrid">${ICON_NAMES.map(n => html`<button class=${cls(space.icon === n && 'on')} onClick=${() => set(n)}><${Icon} name=${n} /></button>`)}</div>
       <div class="search"><input placeholder="…or type an emoji" value=${emoji} maxLength=${4} onInput=${e => setEmoji(e.target.value)} onKeyDown=${e => { if (e.key === 'Enter' && emoji.trim()) set('emoji:' + emoji.trim()) }} /></div>
+    </div>`
+}
+
+// ================================================================ settings sheet
+
+function Settings({ data, state }) {
+  return html`<div class="sheet" onMouseDown=${e => e.stopPropagation()}><${SettingsPanel} state=${state} section=${data.section} close=${close} /></div>`
+}
+
+// ================================================================ focus mode
+
+function Focus({ state }) {
+  const s = state.settings
+  const [mins, setMins] = useState(s.focusMinutes || 25)
+  const [sites, setSites] = useState((s.focusSites || []).join(', '))
+  const [words, setWords] = useState((s.focusWords || []).join(', '))
+  const [fs, setFs] = useState(true)
+  const split = v => v.split(/[\s,]+/).map(x => x.trim()).filter(Boolean)
+  const start = () => invoke('focus:start', { minutes: mins, sites: split(sites), words: split(words), fullscreen: fs })
+  return html`
+    <div class="card focus" onMouseDown=${e => e.stopPropagation()}>
+      <div class="ph"><${Icon} name="target" size=${18} /><b>Focus</b></div>
+      <p class="fsub">Searching always works. Everything else is blocked unless it’s on an allowed site or the link contains one of your words.</p>
+      <div class="flabel">For</div>
+      <div class="mins">
+        ${[15, 25, 45, 60, 90].map(m => html`<button class=${cls(mins === m && 'on')} onClick=${() => setMins(m)}>${m}m</button>`)}
+        <input type="number" min="1" max="600" value=${mins} onInput=${e => setMins(Math.max(1, Number(e.target.value) || 1))} /><span>min</span>
+      </div>
+      <div class="flabel">Allowed sites</div>
+      <textarea rows="2" placeholder="docs.google.com, khanacademy.org" value=${sites} onInput=${e => setSites(e.target.value)}></textarea>
+      <div class="flabel">Allowed words <small>(in the link, e.g. math, chemistry)</small></div>
+      <textarea rows="2" placeholder="math, calculus, chem" value=${words} onInput=${e => setWords(e.target.value)}></textarea>
+      <label class="chk"><input type="checkbox" checked=${fs} onChange=${e => setFs(e.target.checked)} /> Full screen until the timer ends</label>
+      <div class="btns">
+        <button onClick=${close}>Cancel</button>
+        <button class="pri" onClick=${start}>Start ${mins} minutes</button>
+      </div>
+    </div>`
+}
+
+function FocusBar({ state }) {
+  const f = state.focus
+  const [now, setNow] = useState(Date.now())
+  const [hold, setHold] = useState(0)
+  const holdRef = useRef(null)
+  useEffect(() => { const t = setInterval(() => setNow(Date.now()), 500); return () => clearInterval(t) }, [])
+  if (!f) return null
+  const left = Math.max(0, f.endsAt - now)
+  const mm = Math.floor(left / 60000), ss = Math.floor((left % 60000) / 1000)
+  const pct = 1 - left / (f.endsAt - f.startedAt)
+  // Stopping early needs a 5 second hold, so you don't quit on impulse.
+  const down = () => {
+    const start = Date.now()
+    clearInterval(holdRef.current)
+    holdRef.current = setInterval(() => {
+      const p = Math.min(1, (Date.now() - start) / 5000)
+      setHold(p)
+      if (p >= 1) { clearInterval(holdRef.current); invoke('focus:stop') }
+    }, 50)
+  }
+  const up = () => { clearInterval(holdRef.current); setHold(0) }
+  return html`
+    <div class="focusbar">
+      <svg class="fring" viewBox="0 0 36 36"><circle cx="18" cy="18" r="15" class="bg" /><circle cx="18" cy="18" r="15" pathLength="100" style=${`stroke-dasharray:${Math.round(pct * 100)} 100`} /></svg>
+      <div class="ftime"><b>${mm}:${String(ss).padStart(2, '0')}</b><span>Focusing</span></div>
+      <button class=${cls('fstop', hold > 0 && 'holding')} onMouseDown=${down} onMouseUp=${up} onMouseLeave=${up} title="Hold for 5 seconds to stop early">
+        <i style=${`width:${Math.round(hold * 100)}%`}></i><span>${hold > 0 ? `Hold… ${Math.ceil(5 - hold * 5)}` : 'Hold to stop'}</span>
+      </button>
     </div>`
 }
 
@@ -520,6 +570,6 @@ function Inline({ value, onDone }) {
     onKeyDown=${e => { e.stopPropagation(); if (e.key === 'Enter') fin(e.target.value.trim()); if (e.key === 'Escape') fin(null) }} onBlur=${e => fin(e.target.value.trim())} />`
 }
 
-const MODES = { command: Command, bookmarks: Bookmarks, library: Library, theme: Theme, icons: Icons, find: Find, peek: Peek, prompt: Prompt, savepw: SavePw, toast: Toast }
+const MODES = { command: Command, bookmarks: Bookmarks, theme: Theme, icons: Icons, find: Find, peek: Peek, prompt: Prompt, savepw: SavePw, toast: Toast, settings: Settings, focus: Focus, focusbar: FocusBar }
 
 render(html`<${App} />`, document.getElementById('root'))

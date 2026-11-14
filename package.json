@@ -1,6 +1,6 @@
 {
   "name": "crescent",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A calm, fast, Arc-style browser built on Chromium.",
   "main": "src/main/main.js",
   "scripts": {
@@ -51,6 +51,13 @@
       "target": [
         {
           "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
           "arch": [
             "arm64",
             "x64"

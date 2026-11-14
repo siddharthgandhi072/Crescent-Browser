@@ -13,7 +13,6 @@ class Windows {
     this.c = c
     this.setup = null
     this.settings = null
-    setTimeout(() => this.checkUpdate(false), 20 * 1000)
   }
 
   uiWindow(file, opts) {
@@ -72,14 +71,11 @@ class Windows {
     return true
   }
 
+  // Settings is a sheet inside the main window.
   openSettings(section) {
-    if (this.settings && !this.settings.isDestroyed()) {
-      this.settings.focus()
-      if (section) this.settings.webContents.send('settings:section', section)
-      return
-    }
-    this.settings = this.uiWindow('settings/index.html' + (section ? '#' + section : ''), { width: 860, height: 640, minWidth: 720, minHeight: 480 })
-    this.settings.on('closed', () => { this.settings = null })
+    const m = this.c.ensureMain()
+    m.focus()
+    m.openOverlay('settings', { section: section || 'general' })
   }
 
   openLittle(opts) {
@@ -90,28 +86,7 @@ class Windows {
     return w
   }
 
-  async checkUpdate(interactive) {
-    try {
-      const res = await net.fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers: { Accept: 'application/vnd.github+json' } })
-      if (!res.ok) throw new Error('No releases yet')
-      const rel = await res.json()
-      const latest = String(rel.tag_name || '').replace(/^v/, '')
-      const newer = cmp(latest, app.getVersion()) > 0
-      if (newer) {
-        const { response } = await dialog.showMessageBox({
-          type: 'info', buttons: ['Download', 'Later'], defaultId: 0, cancelId: 1,
-          message: `Crescent ${latest} is available`, detail: `You have ${app.getVersion()}. Your spaces and tabs carry over when you replace the app.`,
-        })
-        if (response === 0) shell.openExternal(rel.html_url)
-      } else if (interactive) {
-        dialog.showMessageBox({ type: 'info', message: 'Crescent is up to date', detail: `Version ${app.getVersion()}` })
-      }
-      return { latest, newer }
-    } catch (e) {
-      if (interactive) dialog.showMessageBox({ type: 'warning', message: 'Could not check for updates', detail: e.message })
-      return { error: e.message }
-    }
-  }
+  checkUpdate(interactive) { return this.c.updater.check(interactive) }
 }
 
 function cmp(a, b) {

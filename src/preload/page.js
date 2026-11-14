@@ -2,7 +2,42 @@
 // Runs in every website frame (sandboxed). Only job: password autofill and
 // offering to save new logins. Pages never get passwords for other sites;
 // the main process checks the frame's origin on every call.
-const { ipcRenderer } = require('electron')
+const { ipcRenderer, contextBridge } = require('electron')
+
+// Site compatibility (see src/main/compat.js). Runs before page scripts.
+try {
+  if (location.hostname === 'accounts.google.com') {
+    contextBridge.executeInMainWorld({
+      func: ua => {
+        const def = (o, k, v) => Object.defineProperty(o, k, { get: () => v, configurable: true })
+        def(Navigator.prototype, 'userAgent', ua)
+        def(Navigator.prototype, 'appVersion', ua.slice(8))
+        def(Navigator.prototype, 'vendor', '')
+        def(Navigator.prototype, 'userAgentData', undefined)
+      },
+      args: ['Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:140.0) Gecko/20100101 Firefox/140.0'],
+    })
+  } else if (/^https?:$/.test(location.protocol)) {
+    contextBridge.executeInMainWorld({
+      func: () => {
+        if (typeof NavigatorUAData === 'undefined') return
+        const P = NavigatorUAData.prototype
+        const desc = Object.getOwnPropertyDescriptor(P, 'brands')
+        if (!desc || !desc.get) return
+        const add = list => {
+          if (!Array.isArray(list) || list.some(b => b.brand === 'Google Chrome')) return list
+          const c = list.find(b => b.brand === 'Chromium')
+          return c ? [...list, { brand: 'Google Chrome', version: c.version }] : list
+        }
+        Object.defineProperty(P, 'brands', { get() { return add(desc.get.call(this)) }, configurable: true })
+        const orig = P.getHighEntropyValues
+        P.getHighEntropyValues = function (hints) {
+          return orig.call(this, hints).then(v => ({ ...v, brands: add(v.brands), fullVersionList: add(v.fullVersionList) }))
+        }
+      },
+    })
+  }
+} catch {}
 
 if (/^https?:$/.test(location.protocol)) {
   const ask = (action, data) => ipcRenderer.invoke('page:invoke', action, data).catch(() => null)

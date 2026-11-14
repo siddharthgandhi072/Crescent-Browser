@@ -38,7 +38,7 @@ class Store {
     clearTimeout(this.timer)
     this.timer = null
     if (!this.state) return
-    writeAtomic(this.file, JSON.stringify(this.state))
+    writeAtomic(this.file, JSON.stringify(M.persistable(this.state)))
   }
 }
 

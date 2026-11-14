@@ -12,7 +12,7 @@ const RADIUS = 9
 class Tab extends EventEmitter {
   // viewOptions: given by setWindowOpenHandler's createWindow so the new tab
   // keeps window.opener (needed by many sign-in and "open in new tab" flows).
-  constructor({ id, url, session, background = '#ffffff', kind = 'tab', viewOptions = null }) {
+  constructor({ id, url, session, background = '#ffffff', kind = 'tab', viewOptions = null, radius = RADIUS, guard = null }) {
     super()
     this.id = id
     this.kind = kind
@@ -32,11 +32,13 @@ class Tab extends EventEmitter {
       },
     })
     this.view.setBackgroundColor(background)
-    if (this.view.setBorderRadius) this.view.setBorderRadius(RADIUS)
+    if (this.view.setBorderRadius) this.view.setBorderRadius(radius)
+    // guard(url) -> false blocks a navigation (used by Focus mode).
+    this.guard = guard
     this.wc = this.view.webContents
     this.info = {
       url: url || '', title: '', favicon: null, loading: false, audible: false, muted: false,
-      crashed: false, canGoBack: false, canGoForward: false, zoom: 1, error: null,
+      crashed: false, canGoBack: false, canGoForward: false, zoom: 1, error: null, playing: false, video: false,
     }
     this.lastActive = Date.now()
     this.destroyed = false
@@ -63,6 +65,8 @@ class Tab extends EventEmitter {
     wc.on('did-start-loading', () => upd({ loading: true, crashed: false }))
     wc.on('did-stop-loading', () => { upd({ loading: false }); nav() })
     wc.on('did-navigate', (_e, url, code) => {
+      // Back/forward can't be cancelled up front; bounce them after the fact.
+      if (this.guard && !this.guard(url)) { this.emit('blocked', url); return }
       upd({ error: null })
       nav()
       this.emit('navigated', { url, main: true, code })
@@ -75,6 +79,18 @@ class Tab extends EventEmitter {
       }
     })
     wc.on('audio-state-changed', e => upd({ audible: !!e.audible }))
+    wc.on('media-started-playing', () => {
+      upd({ playing: true })
+      wc.executeJavaScript(`(() => { const v = [...document.querySelectorAll('video')].find(v => !v.paused && v.videoWidth > 0); const m = navigator.mediaSession && navigator.mediaSession.metadata; return { video: !!v, title: m ? m.title : '', artist: m ? m.artist : '', art: m && m.artwork && m.artwork.length ? m.artwork[m.artwork.length - 1].src : '' } })()`, false)
+        .then(r => r && upd({ video: !!r.video, media: { title: r.title || '', artist: r.artist || '', art: r.art || '' } })).catch(() => {})
+    })
+    wc.on('media-paused', () => upd({ playing: false }))
+    const blockNav = e => {
+      if (e.isMainFrame === false || !this.guard) return
+      if (!this.guard(e.url)) { e.preventDefault(); this.emit('blocked', e.url) }
+    }
+    wc.on('will-navigate', blockNav)
+    wc.on('will-redirect', blockNav)
     wc.on('did-fail-load', (_e, code, desc, url, isMain) => {
       // -3 is ERR_ABORTED (user navigated away, downloads): not an error.
       if (!isMain || code === -3) return
@@ -98,6 +114,7 @@ class Tab extends EventEmitter {
   }
 
   load(url) {
+    if (this.guard && !this.guard(url)) { this.emit('blocked', url); return }
     this.info.url = url
     this.info.error = null
     this.wc.loadURL(url).catch(() => {}) // failures are reported through did-fail-load

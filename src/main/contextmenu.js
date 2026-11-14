@@ -9,7 +9,7 @@ class ContextMenu {
     const wc = tab.wc
     const tpl = []
     const sep = () => { if (tpl.length && tpl[tpl.length - 1].type !== 'separator') tpl.push({ type: 'separator' }) }
-    const engine = this.c.store.state.settings.searchEngine
+    const engine = this.c.engine()
 
     if (p.isEditable && p.misspelledWord) {
       for (const s of p.dictionarySuggestions.slice(0, 5)) tpl.push({ label: s, click: () => wc.replaceMisspelling(s) })

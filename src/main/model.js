@@ -27,6 +27,30 @@ const DEFAULT_SETTINGS = {
   fontScale: 1,
   showHoverUrl: true,
   closePinnedResets: true,
+  // Appearance
+  uiFont: 'crescent', // 'crescent' | 'system' | 'rounded' | 'mono'
+  density: 'comfortable', // 'compact' | 'comfortable' | 'roomy'
+  pageRadius: 9,
+  frameGap: 8,
+  glass: 0.8, // sidebar opacity over the desktop blur
+  gridColumns: 4,
+  showCloseButtons: 'hover', // 'hover' | 'always'
+  tabPreviews: true,
+  animations: true,
+  // Behaviour
+  autoPip: true,
+  mediaControls: true,
+  warnBeforeQuit: true,
+  duplicateTabGuard: true,
+  unreadDots: true,
+  httpsUpgrade: false,
+  globalPrivacyControl: true,
+  customSearchUrl: '',
+  shortcuts: {}, // id -> accelerator overrides
+  airTraffic: [], // [{ id, url, app, spaceId }]
+  focusSites: ['docs.google.com', 'khanacademy.org', 'wikipedia.org'],
+  focusWords: [],
+  focusMinutes: 25,
 }
 
 const DEFAULT_THEMES = [
@@ -59,6 +83,8 @@ function defaults() {
     activeSpaceId: space.id,
     bookmarks: { id: 'bm_root', type: 'folder', title: 'Bookmarks', children: [] },
     archive: [],
+    snoozed: [],
+    focus: null,
     window: null,
   }
 }
@@ -144,6 +170,10 @@ function normalize(raw) {
   if (!state.bookmarks || state.bookmarks.type !== 'folder') state.bookmarks = base.bookmarks
   if (!Array.isArray(state.bookmarks.children)) state.bookmarks.children = []
   if (!Array.isArray(state.archive)) state.archive = []
+  if (!Array.isArray(state.snoozed)) state.snoozed = []
+  if (state.focus && !(state.focus.endsAt > Date.now())) state.focus = null
+  if (!state.settings.shortcuts || typeof state.settings.shortcuts !== 'object') state.settings.shortcuts = {}
+  if (!Array.isArray(state.settings.airTraffic)) state.settings.airTraffic = []
 
   const seen = new Set()
   const fixItem = (item, zone, depth) => {
@@ -153,6 +183,12 @@ function normalize(raw) {
     if (item.type === 'tab') {
       item.url = typeof item.url === 'string' ? item.url : ''
       item.title = typeof item.title === 'string' ? item.title : item.url
+      return item
+    }
+    if (item.type === 'note') {
+      if (zone === 'favorites' || depth > 0 && zone === 'today') return null
+      item.title = typeof item.title === 'string' ? item.title : 'Untitled'
+      item.body = typeof item.body === 'string' ? item.body : ''
       return item
     }
     if (item.type === 'folder') {
@@ -170,6 +206,7 @@ function normalize(raw) {
       if (!Array.isArray(item.sizes) || item.sizes.length !== item.children.length) {
         item.sizes = item.children.map(() => 1 / item.children.length)
       }
+      if (item.orientation !== 'column') item.orientation = 'row'
       return item
     }
     return null
@@ -177,13 +214,15 @@ function normalize(raw) {
   const fixList = (list, zone) => (Array.isArray(list) ? list : []).map(i => fixItem(i, zone, 0)).filter(Boolean)
 
   state.favorites = fixList(state.favorites, 'favorites').filter(isTab)
+  state.spaces = state.spaces.filter(s => s && typeof s === 'object' && !s.private)
+  if (!state.spaces.length) state.spaces = base.spaces
   for (const s of state.spaces) {
     if (!s.id || seen.has(s.id)) s.id = uid('s')
     seen.add(s.id)
     s.name = s.name || 'Space'
     s.icon = s.icon || 'moon'
     s.theme = s.theme && Array.isArray(s.theme.colors) && s.theme.colors.length
-      ? { mode: 'auto', grain: 0.4, ...s.theme }
+      ? { mode: 'auto', grain: 0.4, angle: 160, style: 'linear', intensity: 0.5, ...s.theme }
       : { ...DEFAULT_THEMES[0], colors: [...DEFAULT_THEMES[0].colors] }
     s.favorites = fixList(s.favorites, 'favorites').filter(isTab)
     s.pinned = fixList(s.pinned, 'pinned')
@@ -245,6 +284,8 @@ function detach(state, id) {
 
 function archiveTab(state, tab, spaceId) {
   if (!tab || !tab.url || tab.url.startsWith('crescent:')) return
+  const sp = spaceId && getSpace(state, spaceId)
+  if (sp && sp.private) return // private browsing leaves no trace
   state.archive.unshift({
     id: uid('a'), url: tab.url, title: tab.title || tab.url, favicon: tab.favicon || null,
     spaceId: spaceId || null, closedAt: Date.now(),
@@ -258,7 +299,7 @@ function archiveTab(state, tab, spaceId) {
 function closeTab(state, id) {
   const loc = locate(state, id)
   if (!loc) return { removed: false, zone: null }
-  if (loc.zone !== 'today') return { removed: false, zone: loc.zone }
+  if (loc.zone !== 'today' || loc.item.type === 'note') return { removed: false, zone: loc.zone }
   if (loc.item.type === 'split') {
     for (const t of loc.item.children) archiveTab(state, t, loc.space.id)
     detach(state, id)
@@ -291,7 +332,7 @@ function clearToday(state, spaceId) {
   if (!space) return []
   const ids = tabsIn(space.today).map(t => t.id)
   for (const t of tabsIn(space.today)) archiveTab(state, t, space.id)
-  space.today = []
+  space.today = space.today.filter(i => i.type === 'note')
   if (ids.includes(space.activeId)) space.activeId = null
   return ids
 }
@@ -323,6 +364,7 @@ function moveItem(state, id, target) {
   const zone = target.zone
   if (!['favorites', 'pinned', 'today'].includes(zone)) return false
   if (zone === 'favorites' && !isTab(item)) return false
+  if (item.type === 'note' && target.parentId && zone !== 'pinned') return false
   if (zone === 'today' && item.type === 'folder') return false
 
   let list = zone === 'favorites' ? favoritesList(state, space) : space[zone]
@@ -584,7 +626,113 @@ function allBookmarks(state) {
   return out
 }
 
+// ---------- notes ----------
+
+function addNote(state, spaceId, opts = {}) {
+  const space = getSpace(state, spaceId) || activeSpace(state)
+  const note = { id: uid('n'), type: 'note', title: opts.title || 'Untitled', body: opts.body || '', updatedAt: Date.now() }
+  const zone = opts.zone === 'pinned' ? 'pinned' : 'today'
+  let list = space[zone]
+  if (opts.parentId && zone === 'pinned') {
+    const p = locate(state, opts.parentId)
+    if (p && p.item.type === 'folder') list = p.item.children
+  }
+  list.splice(zone === 'today' ? 0 : list.length, 0, note)
+  return note
+}
+
+function updateNote(state, id, patch) {
+  const loc = locate(state, id)
+  if (!loc || loc.item.type !== 'note') return false
+  if (typeof patch.title === 'string') loc.item.title = patch.title.slice(0, 300)
+  if (typeof patch.body === 'string') loc.item.body = patch.body.slice(0, 500000)
+  loc.item.updatedAt = Date.now()
+  return true
+}
+
+// ---------- split extras ----------
+
+// Dropping tab B onto tab A: A's split grows, or a new split is made.
+function splitByDrop(state, draggedId, targetId) {
+  if (draggedId === targetId) return null
+  const t = locate(state, targetId)
+  const d = locate(state, draggedId)
+  if (!t || !d || !isTab(t.item) || !isTab(d.item)) return null
+  const tSplit = t.parent && t.parent.type === 'split' ? t.parent : null
+  if (tSplit) {
+    if (d.parent === tSplit || tSplit.children.length >= 4) return null
+    let tab = d.item
+    if (d.zone === 'today') detach(state, draggedId)
+    else tab = makeTab({ url: d.item.url, title: d.item.title, favicon: d.item.favicon })
+    tSplit.children.push(tab)
+    const n = tSplit.children.length
+    tSplit.sizes = tSplit.children.map(() => 1 / n)
+    return { split: tSplit, ids: tSplit.children.map(c => c.id), focus: tab.id }
+  }
+  const r = createSplit(state, targetId, draggedId)
+  return r ? { split: r.split, ids: r.ids, focus: r.ids[1] } : null
+}
+
+function setSplitOrientation(state, splitId, orientation) {
+  const loc = locate(state, splitId)
+  if (!loc || loc.item.type !== 'split') return false
+  loc.item.orientation = orientation === 'column' ? 'column' : 'row'
+  return true
+}
+
+function swapSplit(state, splitId) {
+  const loc = locate(state, splitId)
+  if (!loc || loc.item.type !== 'split') return false
+  loc.item.children.reverse()
+  loc.item.sizes = [...loc.item.sizes].reverse()
+  return true
+}
+
+// ---------- snooze ----------
+
+function snoozeTab(state, id, until) {
+  const loc = locate(state, id)
+  if (!loc || !isTab(loc.item) || !(until > Date.now())) return false
+  const t = loc.item
+  state.snoozed.push({ id: uid('z'), url: t.url, title: t.title, favicon: t.favicon || null, spaceId: loc.space ? loc.space.id : null, until })
+  if (loc.zone === 'today') detach(state, id)
+  return true
+}
+
+// Brings back snoozed tabs whose time has come. Returns the new tab ids.
+function wakeSnoozed(state, now = Date.now()) {
+  const due = state.snoozed.filter(z => z.until <= now)
+  if (!due.length) return []
+  state.snoozed = state.snoozed.filter(z => z.until > now)
+  return due.map(z => {
+    const space = getSpace(state, z.spaceId) || activeSpace(state)
+    const tab = addTab(state, space.id, { url: z.url, title: z.title, favicon: z.favicon }, { index: 0 })
+    tab.unread = true
+    return tab.id
+  })
+}
+
+// ---------- private space ----------
+
+function addPrivateSpace(state) {
+  const existing = state.spaces.find(s => s.private)
+  if (existing) return existing
+  const s = makeSpace('Private', { icon: 'incognito', theme: { colors: ['#3b2f55', '#231d2e'], mode: 'dark', grain: 0.5, angle: 160, style: 'linear', intensity: 0.5 } })
+  s.private = true
+  state.spaces.push(s)
+  return s
+}
+
+// What gets written to disk: private spaces never touch it.
+function persistable(state) {
+  if (!state.spaces.some(s => s.private)) return state
+  const spaces = state.spaces.filter(s => !s.private)
+  const activeSpaceId = spaces.some(s => s.id === state.activeSpaceId) ? state.activeSpaceId : spaces[0].id
+  return { ...state, spaces, activeSpaceId }
+}
+
 module.exports = {
+  addNote, updateNote, splitByDrop, setSplitOrientation, swapSplit, snoozeTab, wakeSnoozed, addPrivateSpace, persistable,
   uid, defaults, normalize, makeTab, makeSpace, DEFAULT_SETTINGS, DEFAULT_THEMES, ARCHIVE_LIMIT,
   getSpace, activeSpace, favoritesList, locate, walk, tabsIn, spaceTabIds, allTabIds,
   addTab, updateTab, detach, closeTab, neighbourAfterClose, clearToday, archiveTab, restoreArchived,

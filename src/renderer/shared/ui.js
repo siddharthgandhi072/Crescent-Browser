@@ -66,11 +66,11 @@ export function letterColor(s) {
 }
 
 export function Favicon({ url, src, size = 16, radius = 4 }) {
-  const [broken, setBroken] = useState(false)
-  useEffect(() => setBroken(false), [src])
+  // Remember which src failed (not just "failed") so a new favicon gets a fresh try.
+  const [bad, setBad] = useState(null)
   const host = hostOf(url)
-  if (src && !broken) {
-    return html`<img src=${src} width=${size} height=${size} style=${`border-radius:${radius}px;flex:none;object-fit:contain`} onError=${() => setBroken(true)} draggable=${false} />`
+  if (src && bad !== src) {
+    return html`<img src=${src} width=${size} height=${size} style=${`border-radius:${radius}px;flex:none;object-fit:contain`} onError=${() => setBad(src)} draggable=${false} />`
   }
   if (url && url.startsWith('crescent:')) {
     return html`<span class="fav-fallback" style=${`width:${size}px;height:${size}px;background:#8d7fa3`}>C</span>`
