@@ -170,7 +170,8 @@ input.inline {
 @keyframes toast { from { opacity: 0; transform: translateY(6px) } }
 
 /* bottom bar */
-.bottom { flex: none; display: flex; align-items: center; height: 30px; margin-top: 4px; }
+.bottom { flex: none; display: flex; align-items: center; height: 30px; margin-top: 4px; -webkit-app-region: drag; }
+.bottom button { -webkit-app-region: no-drag; }
 .spaces { flex: 1; display: flex; justify-content: center; align-items: center; gap: 3px; min-width: 0; overflow: hidden; }
 .sp { width: 26px; height: 26px; border-radius: 7px; display: grid; place-items: center; color: var(--faint); transition: background .12s, color .12s; }
 .sp:hover { color: var(--ink); background: var(--hov); }
