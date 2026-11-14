@@ -1,0 +1,71 @@
+@font-face { font-family: 'Crescent Sans'; src: url(fonts/instrument-sans-latin-400-normal.woff2) format('woff2'); font-weight: 400; font-display: block; }
+@font-face { font-family: 'Crescent Sans'; src: url(fonts/instrument-sans-latin-500-normal.woff2) format('woff2'); font-weight: 500; font-display: block; }
+@font-face { font-family: 'Crescent Sans'; src: url(fonts/instrument-sans-latin-600-normal.woff2) format('woff2'); font-weight: 600; font-display: block; }
+@font-face { font-family: 'Crescent Sans'; src: url(fonts/instrument-sans-latin-700-normal.woff2) format('woff2'); font-weight: 700; font-display: block; }
+@font-face { font-family: 'Crescent Serif'; src: url(fonts/instrument-serif-latin-400-normal.woff2) format('woff2'); font-weight: 400; font-display: block; }
+@font-face { font-family: 'Crescent Serif'; src: url(fonts/instrument-serif-latin-400-italic.woff2) format('woff2'); font-weight: 400; font-style: italic; font-display: block; }
+
+:root {
+  --font: 'Crescent Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --serif: 'Crescent Serif', 'New York', Georgia, serif;
+  --ink: #2f2836;
+  --muted: rgba(47, 40, 54, .55);
+  --faint: rgba(47, 40, 54, .35);
+  --hl: rgba(255, 255, 255, .62);
+  --hov: rgba(255, 255, 255, .3);
+  --line: rgba(47, 40, 54, .11);
+  --accent: #7a5fb0;
+  --panel: rgba(253, 251, 255, .96);
+  --panel-ink: #2f2836;
+  --panel-muted: #8a7f92;
+  --panel-hov: #f2ecf8;
+  --panel-line: #ece6f1;
+  --field: #f0ecf3;
+  --shadow: 0 18px 50px -12px rgba(40, 20, 60, .38), 0 0 0 .5px rgba(0, 0, 0, .12);
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  color-scheme: light;
+}
+:root.dark {
+  --panel: rgba(38, 34, 44, .96);
+  --panel-ink: #efe8f4;
+  --panel-muted: rgba(239, 232, 244, .5);
+  --panel-hov: rgba(180, 156, 240, .16);
+  --panel-line: rgba(255, 255, 255, .08);
+  --field: rgba(255, 255, 255, .07);
+  --shadow: 0 24px 60px -10px rgba(0, 0, 0, .65), 0 0 0 .5px rgba(255, 255, 255, .12);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: var(--font);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+  color: var(--ink);
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
+  overflow: hidden;
+  background: transparent;
+}
+button { font: inherit; color: inherit; background: none; border: 0; cursor: default; }
+input, textarea { font: inherit; color: inherit; user-select: text; -webkit-user-select: text; }
+input:focus, button:focus { outline: none; }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+svg.i { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+img { -webkit-user-drag: none; }
+
+.grain {
+  position: absolute; inset: 0; pointer-events: none; mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='220' height='220'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 .5 0 0 0 0 .5 0 0 0 0 .5 0 0 0 1 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+.fav-fallback {
+  display: grid; place-items: center; border-radius: 4px; color: #fff; font-weight: 700; font-size: 9px; flex: none;
+}
+
+kbd {
+  font-family: var(--font); font-size: 11px; min-width: 19px; height: 19px; padding: 0 5px; border-radius: 5px;
+  background: var(--field); display: inline-grid; place-items: center; color: var(--panel-muted); font-weight: 500;
+}

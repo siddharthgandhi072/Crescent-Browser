@@ -1,232 +1,127 @@
-# Crescent: Zen Browser, made to feel like Arc (no AI)
+<p align="center"><img src="build/icon.png" width="128" alt="Crescent icon"></p>
 
-Crescent is the official **Zen Browser** for macOS, turned into an Arc look-alike:
-
-* **No AI.** Every AI feature is off and locked. That covers the AI chatbot, AI tab grouping and "clean up", Smart Window, AI link previews, AI history search, AI PDF descriptions, extensions running AI models, and on-device translation.
-* **Little Crescent**, like Little Arc. Links you click in other apps (Mail, Slack, Messages…) open in a small window. Click **Open in Crescent** (or press ⌘↩) to move the page into your main window. Press ⌥⌘N for a new one.
-* **Archive.** Every tab you close is saved. Unpinned tabs you haven't used in 12 hours are archived automatically. The searchable **Archive** page has a sidebar button and a File menu item.
-* **Easels.** Free-form boards for text, sticky notes, shapes, drawing, images, links, and captures of any part of a web page. They're in the sidebar and the File menu.
-* **Spaces like Arc.** Each Space has a name, icon, color and **profile**, so logins stay separate. Spaces that share a profile share Favorites.
-* **Arc-style Settings** (⌘,). A simple window with General, Profiles, Links, Appearance, Shortcuts and Advanced tabs. "All settings…" opens the full settings.
-* **Arc look and keys.** The sidebar holds the address, there's a command bar on ⌘T, ⌘S hides the sidebar, and ⌃1–9 switches Spaces. There's a white pill behind the selected tab, rounded page cards, Peek on Shift+click, Boosts and split view.
-* **Crescent name and icon everywhere.** That includes the Dock, Finder and the menus ("About Crescent", "Quit Crescent").
-
-Crescent doesn't fork or recompile the browser. It changes settings and adds code through Firefox's official customization hooks.
-
-### What isn't like Arc
-
-* **Engine.** Crescent runs on Firefox's engine, not Chromium. Firefox extensions work; Chrome-only extensions don't.
-* **Passkeys.** Passkeys saved in iCloud don't work. Apple only allows that for browsers signed with a paid Apple Developer account and specially approved by Apple. Passwords, password managers and USB security keys all work.
-* **Updates.** Updates aren't automatic (see "Updating" below).
+<h1 align="center">Crescent</h1>
+<p align="center">A calm, fast, Arc-style browser for the Mac, built on Chromium.</p>
 
 ---
 
-## Contents
+## Install
 
-```
-./
-├── build.sh                       ← the one script that does everything (run on a Mac)
-├── mods/
-│   ├── policies.json              → Contents/Resources/distribution/policies.json
-│   ├── defaults/pref/crescent-autoconfig.js → Contents/Resources/defaults/pref/
-│   ├── crescent.cfg                → Contents/Resources/crescent.cfg
-│   └── crescent/                  → Contents/Resources/crescent/
-│       ├── chrome.manifest        ← registers chrome://crescent/
-│       ├── browser.css            ← the Arc look for the browser window
-│       └── content/
-│           ├── Crescent.sys.mjs   ← Little Crescent, Archive, Settings, menus, sidebar buttons
-│           ├── CrescentStore.sys.mjs ← saves the Archive and Easels in your profile
-│           ├── archive.*          ← the Archive page
-│           ├── easels.* easel.*   ← the Easels list and editor
-│           └── settings.*         ← the Arc-style Settings window
-├── icon/
-│   ├── make_icon.py               ← draws the icon (Python + Pillow)
-│   ├── AppIcon.png
-│   └── AppIcon.icns               → Contents/Resources/firefox.icns
-└── .github/workflows/build-crescent.yml  ← builds the DMG on GitHub's Macs
-```
+1. Open the latest [Release](../../releases) (or the **Crescent-dmg** artifact on the latest [Actions run](../../actions)).
+2. Download `Crescent-…-arm64.dmg` for Apple Silicon (M1–M4), or `-x64.dmg` for an Intel Mac.
+3. Drag **Crescent** into **Applications** and open it.
 
----
+If macOS says it can't check Crescent for malware, go to **System Settings → Privacy & Security** and click **Open Anyway**. You only need to do this once. Builds signed with a Developer ID (see [Signing](#signing-and-notarizing)) skip this step.
 
-## Install the ready-made DMG
+The first launch walks you through importing from another browser, creating your spaces, choosing how pins work, and setting Crescent as your default browser.
 
-1. Open the repo on GitHub, go to **Actions**, select **"Build Crescent (Arc-style Zen) for macOS"**, and click the newest green run.
-2. Under **Artifacts**, download **Crescent-dmg**. GitHub delivers it as a `.zip`; double-click it to get `Crescent.dmg`.
-3. Open `Crescent.dmg` and drag **Crescent** onto **Applications**.
-4. Follow **First launch** below.
+## What's in it
 
-### First launch
+**Sidebar and tabs**
+- **Vertical tabs.** New tabs go on top, and **↓ Clear** archives everything that isn't pinned.
+- **Pinned bar.** An icon grid at the top of the sidebar for the sites you live in. It can be the same in every space or different per space; switching between the two never deletes a pin.
+- **Pinned tabs with folders.** Closing a pinned tab only unloads it, and reopening it goes back to its pinned page. If you navigate away from the pinned page, a `/` marks the tab and a one-click button takes you back.
+- **When you close everything**, Crescent lands on your most recent pinned tab.
+- **⌃1–⌃8** jump to tabs and **⌃9** jumps to the last one. Pinned tabs and the pinned bar are skipped.
 
-The app is signed by you, not by a registered Apple developer, so macOS blocks it the first time. Pick one of these:
+**Spaces**
+- Each space has its own tabs, pins, icon and colours.
+- Switch with a two-finger swipe on the sidebar, **⌃⌥1–9**, or **⌥⌘←/→**.
+- An Arc-style colour picker sets up to three colours per space, with light/auto/dark mode and grain.
 
-* **Settings method:** Double-click Crescent and click **Done** in the warning. Then open **System Settings → Privacy & Security**, scroll down, and click **Open Anyway** next to "Crescent". Confirm with your password.
-* **Terminal method:** Run this once:
-  ```bash
-  xattr -dr com.apple.quarantine /Applications/Crescent.app
-  ```
+**Command bar (⌘T)**
+- Searches Google suggestions, open tabs in every space, bookmarks and history.
+- Type `>` for commands.
+- **⌘↵** opens the result in split view, **⌥↵** in Peek, and **⇧↵** in Little Crescent.
 
-### If you got `Crescent-macOS-app.zip` (the app built without a Mac)
+**Ways to view pages**
+- **Split view.** Up to four tabs side by side, with draggable dividers.
+- **Peek.** Shift-click a link, or follow a link out of a pinned tab, to preview it without leaving the page.
+- **Little Crescent.** Links from other apps open in a small window. One click moves the page into your main window.
 
-This copy was assembled on Linux, where Apple's signing tool doesn't exist, so it still needs to be signed on your Mac:
+**Library (⌘Y)** holds every closed tab (nothing is auto-archived), your history and your downloads.
 
-1. Double-click the zip and drag **Crescent.app** into **Applications**.
-2. Open **Terminal** and paste this one line. It removes the "downloaded from the internet" flag and signs the app for your Mac only:
-   ```bash
-   xattr -cr /Applications/Crescent.app && codesign --force --deep --sign - /Applications/Crescent.app
-   ```
-3. Open Crescent normally.
+**Bookmarks** are one click away in the top bar (**⌥⌘B**).
 
-### Bring your Arc stuff over
+**Import** comes from Arc (including spaces, pinned tabs, folders and the pinned bar), Chrome, Brave, Helium, Edge, Vivaldi, Opera, Dia, Zen (including workspaces), Firefox and Safari. It brings bookmarks, history, passwords, logins (cookies) and Chrome Web Store extensions.
 
-On first launch, the welcome screen offers to import from other browsers, and **Arc is one of them**. It brings over your Spaces, pinned tabs and favorites. You can also run it later from **File → Import From Another Browser…**.
+**Chrome extensions**
+- Install from the Chrome Web Store with "Add to Chrome".
+- Extension buttons appear in the sidebar.
 
----
+**Built-in ad and tracker blocking** uses AdGuard's filter lists. You can pause it per site.
 
-## Build it yourself on your Mac
+**Passwords**
+- Stored encrypted in your macOS Keychain.
+- Autofilled on login forms.
+- Crescent offers to save new ones.
 
-You need macOS and an internet connection. `hdiutil`, `codesign` and `curl` are already on every Mac.
+**Downloads** ask where to save each file (you can switch this off in Settings).
 
-```bash
-cd Crescent-Browser
-```
+**Privacy and memory**
+- Sites must ask before using your camera, mic, location or notifications.
+- Startup loads only the tab you're looking at.
+- Tabs you haven't looked at for a while are unloaded to save memory. Tabs playing audio or using the camera are never unloaded.
+- Crescent has no AI, no accounts and no telemetry.
 
-```bash
-./build.sh
-```
+## Keyboard shortcuts
 
-The script prints each step, and the result is `dist/Crescent.dmg`. Options:
+| | |
+|---|---|
+| Command bar / new tab | ⌘T |
+| Edit current URL | ⌘L |
+| Close tab (pins stay) | ⌘W |
+| Reopen closed tab | ⇧⌘T |
+| Tab 1–8 / last tab | ⌃1–⌃8 / ⌃9 |
+| Next / previous tab | ⌃⇥ / ⌃⇧⇥ |
+| Next / previous space | ⌥⌘→ / ⌥⌘← |
+| Space 1–9 | ⌃⌥1–⌃⌥9 |
+| Pin / unpin tab | ⌘D |
+| Add to pinned bar | ⇧⌘D |
+| Split view | ⌃⇧= |
+| Toggle sidebar | ⌘S |
+| Copy URL | ⇧⌘C |
+| Find | ⌘F |
+| Bookmarks / bookmark page | ⌥⌘B / ⌥⌘D |
+| Library / downloads | ⌘Y / ⇧⌘J |
+| Edit theme | ⇧⌘E |
+| New space | ⇧⌘S |
+| Little Crescent / private window | ⌥⌘N / ⇧⌘N |
+| Clear unpinned tabs | ⇧⌘⌫ |
 
-```bash
-ZEN_VERSION=1.24.1b ./build.sh
-```
+## Known limits
 
-```bash
-APP_NAME="My Browser" BUNDLE_ID="com.me.mybrowser" ./build.sh
-```
+- **Netflix, Disney+ and other DRM video don't play yet.** They need Widevine, which plain Electron doesn't ship. The fix is to switch to castLabs' Electron build plus their free signing service; that's planned. YouTube, Twitch and other normal video work.
+- **Touch ID passkeys** on websites aren't supported yet. Passwords and security keys work.
+- **Extensions** that use rare Chrome APIs may only partly work. Most popular ones (ad blockers, dark mode, password managers, Better Canvas-style page tweaks) should work.
+- **Firefox, Zen and Safari passwords** are encrypted in a way only those browsers can read. Export them to CSV from that browser, then use **Settings → Import → Import passwords from CSV**.
 
-To change the icon, replace `icon/AppIcon.icns` with any `.icns` file. You can make one from a 1024×1024 PNG with an online converter or **Image2icon**. Or edit the colors at the top of `icon/make_icon.py` and run `python3 icon/make_icon.py` (needs `pip3 install pillow`). Then rebuild.
-
----
-
-## How it works, step by step
-
-`build.sh` does these six steps, and you could do each one by hand.
-
-### 1. Download the official Zen app
-
-It downloads `zen.macos-universal.dmg` from Zen's GitHub releases. This build runs on both Apple Silicon and Intel Macs.
-
-### 2. Copy Zen.app out
+## Build from source
 
 ```bash
-hdiutil attach -nobrowse -readonly -mountpoint mnt zen.dmg
+npm ci
+npm start                       # run in development
+npm test                        # unit tests
+xvfb-run -a node test/e2e/run.js  # end-to-end tests (Linux; on a Mac just: node test/e2e/run.js)
+npx electron-builder --mac      # build the .dmg (on a Mac)
 ```
 
-```bash
-ditto mnt/Zen.app Crescent.app
-```
+The project is plain JavaScript with no bundler. Electron runs the main process in `src/main`, and the UI in `src/renderer` is Preact + htm loaded as ES modules. The rules for spaces, pins, folders and splits live in `src/main/model.js`, which has its own unit tests.
 
-```bash
-hdiutil detach mnt
-```
+## Signing and notarizing
 
-### 3. Add the mods
+GitHub Actions builds the `.dmg` on every push. Without a certificate it ad-hoc signs the app, which runs fine but needs the one-time **Open Anyway** step above.
 
-Firefox, which Zen is built on, has three official ways to customize a copy of the browser without recompiling it. This project uses all three.
+To ship a build that opens with no warning, add these repository secrets. They come from an Apple Developer account.
 
-**a) Enterprise policy: `distribution/policies.json`.** This is the mechanism companies use to manage Firefox. The file goes in `Crescent.app/Contents/Resources/distribution/`, and Firefox applies it before anything else:
+| Secret | What it is |
+|---|---|
+| `CSC_LINK` | Your **Developer ID Application** certificate exported as `.p12`, base64-encoded |
+| `CSC_KEY_PASSWORD` | The `.p12` password |
+| `APPLE_ID` | Your Apple ID email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | An app-specific password from appleid.apple.com |
+| `APPLE_TEAM_ID` | Your 10-character Team ID |
 
-* `AIControls → Default: blocked, Locked` is Firefox's master switch that blocks every AI feature.
-* `GenerativeAI: Enabled false, Locked` is an older switch that's also set, to be safe.
-* It also turns off telemetry and studies.
-* It turns off automatic updates, because an update would replace the modified app with plain Zen. To update, rebuild instead (see below).
-
-You can check that the policies are active by opening `about:policies` in the browser.
-
-**b) AutoConfig: `defaults/pref/crescent-autoconfig.js` + `crescent.cfg`.** These are Firefox's "AutoConfig" files.
-
-* The small file in `defaults/pref/` tells the browser to run `crescent.cfg` at every startup.
-* `crescent.cfg` is JavaScript with full browser privileges.
-  * `lockPref(...)` forces a setting and greys it out. It's used for every AI and telemetry switch.
-  * `defaultPref(...)` changes only the default, so you can still change those settings in Settings or `about:config`. It's used for the Arc-like defaults.
-  * It registers the `crescent/` folder as `chrome://crescent/`, loads `browser.css` into the browser window, and starts `Crescent.sys.mjs`.
-
-**c) Crescent's own code: `crescent/content/`.** This is ordinary web code (HTML, CSS and JavaScript) running with browser privileges:
-
-* **`Crescent.sys.mjs`** sets up every window:
-  * **Archive:** it listens for closed tabs and saves each one. Every 10 minutes it closes unpinned tabs that have been unused for 12 hours. It never closes pinned tabs, Favorites, the current tab, tabs playing audio, split-view tabs, or a Peek.
-  * **Little Crescent:** Firefox opens a link from another app by calling `browserDOMWindow.openURI(...)` with an "external" flag. Crescent catches that call and opens a small window instead. **Open in Crescent** moves the tab into your main window with `gBrowser.adoptTab`.
-  * **Settings:** it replaces `openPreferences()`, which is what ⌘, calls, so the Crescent Settings window opens instead.
-  * **Menus and buttons:** it adds the File menu items and the Archive and Easels buttons at the bottom of the sidebar.
-* **`CrescentStore.sys.mjs`** saves the Archive (`crescent-archive.json`) and Easels (`crescent-easels/`) in your profile folder.
-* The **pages** (`archive`, `easels`, `easel`, `settings`) are plain HTML files.
-* **`browser.css`** is the Arc styling. It works like a `userChrome.css`, and each section is commented.
-
-### 4. Rename and replace the icon
-
-* `AppIcon.icns` is copied over `Contents/Resources/firefox.icns`.
-* `/usr/libexec/PlistBuddy` edits `Contents/Info.plist` to set `CFBundleName`, `CFBundleDisplayName` and `CFBundleIdentifier`. This is the name you see in the Dock, Finder, Cmd-Tab and the menu bar.
-* For the menus, the script unzips `Contents/Resources/browser/omni.ja` (Zen's packed interface files) and changes the brand name in `localization/*/branding/brand.ftl` and `chrome/*/locale/branding/brand.properties` to "Crescent". It also changes "Zen" in Zen's own text (except the Donate button, which still pays Zen), then zips the files back up. This is Mozilla's documented way to edit `omni.ja`, and the build's self-test checks that the menu says "Quit Crescent".
-
-### 5. Re-sign
-
-Changing any file inside an app breaks its Apple code signature, and a Mac won't run an app with a broken signature. So the script:
-
-1. Deletes `embedded.provisionprofile`, which is tied to Zen's Apple developer account.
-2. Re-signs every piece of code, innermost first, with an **ad-hoc** signature: `codesign --force --sign -`.
-3. Keeps Zen's normal permissions (JIT, camera, microphone, location, USB) and drops the two that only Zen's own developer account may use:
-   * `application-identifier`
-   * `web-browser.public-key-credential`, which is what lets Zen use passkeys saved in iCloud Keychain/Passwords.
-
-As a result, **passkeys stored in iCloud Keychain won't show up in Crescent.** Passwords, password-manager extensions such as 1Password and Bitwarden, and USB security keys still work.
-
-### 6. Make the DMG
-
-```bash
-hdiutil create -volname Crescent -srcfolder staging -fs HFS+ -format UDZO Crescent.dmg
-```
-
-The `staging` folder holds `Crescent.app` and a shortcut to `/Applications`.
-
----
-
-## Arc → Crescent cheat-sheet
-
-| Arc | In Crescent (Zen) | Shortcut |
-|---|---|---|
-| Hide/show sidebar | Compact mode | **Cmd+S** |
-| Command bar | URL bar replaces the new-tab page | **Cmd+T** / **Cmd+L** |
-| Spaces | Workspaces (Spaces) | **Ctrl+1…9**, swipe with two fingers |
-| Favorites (top grid) | Favorites, one set per profile | drag a tab to the top |
-| Profiles | Settings → Profiles (separate logins per Space) | |
-| Pinned tabs / folders | Pinned tabs + folders | **Cmd+Shift+D** pin/unpin |
-| Today tabs + "Clear" | Unpinned tabs + Clear button | **Cmd+Shift+K** clear |
-| Archive | Archive page (sidebar button / File → Archive) | **Cmd+Shift+T** reopen last |
-| Peek | Glance | **Shift+click** a link |
-| Split View | Split View | **Cmd+Alt+V** / **Cmd+Alt+H** / **Cmd+Alt+G** |
-| Copy URL | Copy URL | **Cmd+Shift+C** |
-| Boosts | Boosts | in the site menu next to the URL |
-| Space colors / gradients | Right-click a Space → Edit theme | |
-| Media controls in sidebar | Media controls in sidebar | |
-| Little Arc | Little Crescent | **Cmd+Opt+N**, **Cmd+Enter** to open in Crescent |
-| Easels | Easels (sidebar button / File → New Easel) | |
-| Settings | Crescent Settings | **Cmd+,** |
-
-To change any shortcut, open Settings → Shortcuts → Customize, or go to `about:keyboard`.
-
-## Updating to a newer Zen
-
-Auto-update is turned off so updates can't wipe the mods. To move to a new Zen version:
-
-* **On GitHub:** go to **Actions → Build Crescent → Run workflow**. Leave "latest" in the box or type a version.
-* **On your Mac:** run `./build.sh` again.
-
-Then drag the new Crescent into Applications and choose Replace. Your tabs, logins and settings live in your profile, not in the app, so they're kept.
-
-## Undo / uninstall
-
-Delete `/Applications/Crescent.app`. Your profile is in `~/Library/Application Support/zen/`. The real Zen uses the same folder, but each install keeps its own profile. To delete everything, remove that folder too.
-
-## Credits and license
-
-The browser is [Zen](https://github.com/zen-browser/desktop) (MPL-2.0), which is built on Firefox. Crescent isn't affiliated with Zen, Mozilla or The Browser Company. The icon is original artwork.
+To publish a release your friends can download:
+1. Go to **Actions → Build → Run workflow** and tick **Publish a GitHub Release**.
+2. Or push a tag such as `v0.1.0`.
