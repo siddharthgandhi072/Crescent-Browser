@@ -1,8 +1,6 @@
-# Crescent: Zen Browser, made to feel like Arc (no AI)
+# Crescent: THE browser made for life after Arc. Helping fill that crater in your search experience.
 
-Crescent is the official **Zen Browser** for macOS, turned into an Arc look-alike:
-
-* **No AI.** Every AI feature is off and locked. That covers the AI chatbot, AI tab grouping and "clean up", Smart Window, AI link previews, AI history search, AI PDF descriptions, extensions running AI models, and on-device translation.
+This browser takes some of the best features from the best browsers out there and adds some of its own rocket fuel to make to make it even more out of this world. 
 * **Little Crescent**, like Little Arc. Links you click in other apps (Mail, Slack, Messages…) open in a small window. Click **Open in Crescent** (or press ⌘↩) to move the page into your main window. Press ⌥⌘N for a new one.
 * **Archive.** Every tab you close is saved. Unpinned tabs you haven't used in 12 hours are archived automatically. The searchable **Archive** page has a sidebar button and a File menu item.
 * **Easels.** Free-form boards for text, sticky notes, shapes, drawing, images, links, and captures of any part of a web page. They're in the sidebar and the File menu.
@@ -11,13 +9,9 @@ Crescent is the official **Zen Browser** for macOS, turned into an Arc look-alik
 * **Arc look and keys.** The sidebar holds the address, there's a command bar on ⌘T, ⌘S hides the sidebar, and ⌃1–9 switches Spaces. There's a white pill behind the selected tab, rounded page cards, Peek on Shift+click, Boosts and split view.
 * **Crescent name and icon everywhere.** That includes the Dock, Finder and the menus ("About Crescent", "Quit Crescent").
 
-Crescent doesn't fork or recompile the browser. It changes settings and adds code through Firefox's official customization hooks.
 
-### What isn't like Arc
-
-* **Engine.** Crescent runs on Firefox's engine, not Chromium. Firefox extensions work; Chrome-only extensions don't.
 * **Passkeys.** Passkeys saved in iCloud don't work. Apple only allows that for browsers signed with a paid Apple Developer account and specially approved by Apple. Passwords, password managers and USB security keys all work.
-* **Updates.** Updates aren't automatic (see "Updating" below).
+
 
 ---
 
