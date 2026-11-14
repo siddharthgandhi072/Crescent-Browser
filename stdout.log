@@ -1,0 +1,20 @@
+2026-11-14 05:22:03.939 Zen GPU Helper[5616:20112] Failure on line 687 in function id scheduleApplicationNotification(LSNotificationCode, NSWorkspaceNotificationCenter *): noErr == _LSModifyNotification(notificationID, 1, &code, 0, NULL, NULL, NULL)
+2026-11-14 05:22:04.127 Zen GPU Helper[5616:20112] Error received in message reply handler: Connection invalid
+2026-11-14 05:22:04.127 Zen GPU Helper[5616:20125] Connection Invalid error for service com.apple.hiservices-xpcservice.
+Crash Annotation GraphicsCriticalError: |[G0][GFX1-]: Failed GL context creation for WebRender: 0x0 (t=1.24913) [GFX1-]: Failed GL context creation for WebRender: 0x0
+Crash Annotation GraphicsCriticalError: |[0][GFX1-]: Failed to connect WebRenderBridgeChild. isParent=true (t=2.47948) [GFX1-]: Failed to connect WebRenderBridgeChild. isParent=true
+Crash Annotation GraphicsCriticalError: |[0][GFX1-]: Failed to connect WebRenderBridgeChild. isParent=true (t=2.47948) |[1][GFX1-]: Fallback WR to SW-WR (t=2.47967) [GFX1-]: Fallback WR to SW-WR
+sysctlbyname for kern.hv_vmm_present failed with status -1Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.
+Exiting due to channel error.

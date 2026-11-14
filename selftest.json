@@ -1,0 +1,44 @@
+{
+  "errors": [],
+  "linkHook": "prototype",
+  "cssRegistered": true,
+  "policies": {
+    "active": [
+      "AIControls",
+      "GenerativeAI",
+      "DisableTelemetry",
+      "DisableFirefoxStudies",
+      "DisableAppUpdate"
+    ]
+  },
+  "prefs": {
+    "browser.ml.enable": false,
+    "browser.ml.enable (locked)": true,
+    "browser.ml.chat.enabled": false,
+    "browser.ml.chat.enabled (locked)": true,
+    "browser.tabs.groups.smart.enabled": false,
+    "browser.tabs.groups.smart.enabled (locked)": true,
+    "browser.ai.control.default": "blocked",
+    "browser.ai.control.default (locked)": true
+  },
+  "brand": {
+    "quit": "Quit Crescent",
+    "about": "About Crescent"
+  },
+  "sidebarButtons": true,
+  "menuItems": true,
+  "snapshots": [
+    "1-main.png",
+    "2-archive.png",
+    "3-easel.png",
+    "4-settings.png",
+    "5-little.png",
+    "6-main-dark.png"
+  ],
+  "archiveCount": 1,
+  "easelId": "799fb6b1-7006-4d6c-992e-35ed423867ca",
+  "settingsOpened": true,
+  "littleOpened": true,
+  "littleBar": true,
+  "littlePromoted": true
+}
