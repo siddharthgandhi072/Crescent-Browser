@@ -70,6 +70,9 @@ jobs:
             npx electron-builder --mac --publish never -c.mac.notarize=true
           else
             echo "No signing certificate: ad-hoc signing (right-click → Open on first launch)"
+            # Empty secrets arrive as empty strings; electron-builder would
+            # treat an empty CSC_LINK as a file path.
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
             export CSC_IDENTITY_AUTO_DISCOVERY=false
             npx electron-builder --mac --publish never -c.mac.identity=-
           fi
